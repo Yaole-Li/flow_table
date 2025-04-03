@@ -1,0 +1,62 @@
+# C++ 编译生成文件
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.a
+*.lib
+
+# 编译目录
+/build
+/bin
+/Debug
+/Release
+/x64
+/.vs
+
+# CMake 生成的文件
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Visual Studio 文件
+*.vcxproj*
+*.sln
+*.user
+*.filters
+*.opensdf
+*.sdf
+*.VC.db
+ipch/
+.vscode/
+
+# Qt Creator
+*.pro.user
+*.qmake.stash
+
+# Clion IDE
+.idea/
+cmake-build-*/
+
+# 通用临时文件
+*.log
+*.tmp
+*.swp
+*~
+
+# 自动生成的依赖文件
+*.d
+
+# Mac OS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+/build
+/bin
