@@ -4,6 +4,10 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <ctime>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include "../tools/types.h"
 #include "../tools/CircularString.h"
 
@@ -70,6 +74,23 @@ public:
      */
     bool isMarkedForDeletion() const;
 
+    /**
+     * @brief 清理流对象的资源
+     */
+    void cleanup();
+
+    /**
+     * @brief 更新流的最后活动时间
+     */
+    void updateLastActivityTime();
+
+    /**
+     * @brief 检查流是否超时
+     * @param timeoutSeconds 超时秒数
+     * @return 流是否超时
+     */
+    bool isTimeout(size_t timeoutSeconds) const;
+
 private:
     FourTuple c2sTuple;                    // C2S方向的四元组
     FourTuple s2cTuple;                    // S2C方向的四元组
@@ -80,6 +101,7 @@ private:
     CircularString c2sBuffer;              // C2S方向的数据缓冲区
     CircularString s2cBuffer;              // S2C方向的数据缓冲区
     bool markedForDeletion;                // 是否标记为删除
+    time_t lastActivityTime;               // 最后活动时间
 };
 
 /**
@@ -117,6 +139,24 @@ public:
     void cleanupMarkedFlows();
 
     /**
+     * @brief 检查并标记超时的流
+     * @param timeoutSeconds 超时秒数，默认120秒
+     */
+    void checkTimeoutFlows(size_t timeoutSeconds = 120);
+
+    /**
+     * @brief 启动清理线程
+     * @param checkIntervalSeconds 检查间隔秒数，默认10秒
+     * @param timeoutSeconds 流超时秒数，默认120秒
+     */
+    void startCleanupThread(size_t checkIntervalSeconds = 10, size_t timeoutSeconds = 120);
+
+    /**
+     * @brief 停止清理线程
+     */
+    void stopCleanupThread();
+
+    /**
      * @brief 获取流总数
      * @return 流总数
      */
@@ -127,6 +167,12 @@ public:
      */
     void outputResults() const;
 
+    /**
+     * @brief 获取所有流对象的引用
+     * @return 所有不重复的流对象的向量
+     */
+    std::vector<Flow*> getAllFlows();
+
 private:
     /**
      * @brief 计算四元组的哈希值
@@ -135,7 +181,17 @@ private:
      */
     int hashFourTuple(const FourTuple& fourTuple) const;
 
+    /**
+     * @brief 清理线程函数
+     * @param checkIntervalSeconds 检查间隔秒数
+     * @param timeoutSeconds 流超时秒数
+     */
+    void cleanupThreadFunction(size_t checkIntervalSeconds, size_t timeoutSeconds);
+
     std::unordered_map<int, Flow*> flowMap;  // 流映射表
+    std::thread cleanupThread;               // 清理线程
+    std::atomic<bool> stopThread;            // 停止线程标志
+    mutable std::mutex flowMapMutex;         // 流映射表互斥锁
 };
 
 } // namespace flow_table

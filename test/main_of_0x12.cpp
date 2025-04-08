@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <cstring>
-#include <arpa/inet.h>  // 用于IP地址转换函数
+#include <arpa/inet.h>
 #include <types.h>
 #include "../include/flows/flow_manager.h"
 #include "../include/tools/CircularString.h"
@@ -62,10 +62,15 @@ int Filter(TASK *Import, TASK **Export) {
             3. 根据四元组和 TASK 中的 Buffer 及 Length 创建 InputPacket
             4. 根据 InputPacket 创建 Flow(通过 HashFlowTable 的 processPacket)
             5. 调用对应的 Parser 函数，解析结果会存储在对应的 messages 中
+            6. 释放资源
             */
 
             // 1. 创建好 HashFlowTable 类
             static flow_table::HashFlowTable flowTable;
+            
+            // 启动清理线程，每5秒检查一次，超时时间为120秒
+            std::cout << "启动清理线程..." << std::endl;
+            flowTable.startCleanupThread(5, 120);
             
             // 2. 根据 TASK 中的源端和宿端创建四元组
             FourTuple fourTuple;
@@ -110,6 +115,22 @@ int Filter(TASK *Import, TASK **Export) {
             if (processed) {
                 // 输出所有已解析的消息
                 flowTable.outputResults();
+                
+                // 6. 释放资源
+                std::cout << "开始释放资源..." << std::endl;
+                
+                // 停止清理线程
+                flowTable.stopCleanupThread();
+                
+                // 标记所有流可以删除
+                for (auto& flow : flowTable.getAllFlows()) {
+                    flow->markForDeletion();
+                }
+                
+                // 手动清理所有标记为删除的流
+                flowTable.cleanupMarkedFlows();
+                
+                std::cout << "资源释放完成" << std::endl;
             }
 
             break;

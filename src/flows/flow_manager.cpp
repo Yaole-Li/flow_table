@@ -1,6 +1,13 @@
 #include "../../include/flows/flow_manager.h"
 #include <iostream>
-#include <arpa/inet.h>  // 用于IP地址转换函数
+#include <arpa/inet.h>
+#include <set>
+#include <algorithm>
+#include <cctype>
+#include <ctime>
+#include <thread>
+#include <mutex>
+#include <chrono>
 
 namespace flow_table {
 
@@ -11,7 +18,8 @@ Flow::Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple)
       s2cTuple(s2cTuple),
       c2sBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
       s2cBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
-      markedForDeletion(false) {
+      markedForDeletion(false),
+      lastActivityTime(time(nullptr)) { // 初始化最后活动时间为当前时间
     // 初始化流对象
     // TODO: 实现初始化逻辑
 }
@@ -33,6 +41,21 @@ bool Flow::parseC2SData() {
     // 3. 更新C2S状态
     // 4. 生成Message对象并添加到c2sMessages中
     // TODO: 实现解析逻辑
+    
+    // 检查是否有LOGOUT命令
+    for (const auto& message : c2sMessages) {
+        // 不区分大小写比较command字段是否为"logout"
+        std::string command = message.command;
+        std::transform(command.begin(), command.end(), command.begin(), 
+                      [](unsigned char c){ return std::tolower(c); });
+        
+        if (command == "logout") {
+            // 发现LOGOUT命令，标记流可以删除
+            markForDeletion();
+            break;
+        }
+    }
+    
     return false; // 暂时返回false
 }
 
@@ -64,10 +87,41 @@ bool Flow::isMarkedForDeletion() const {
     return markedForDeletion;
 }
 
+void Flow::cleanup() {
+    // 清理流对象的资源
+    c2sMessages.clear();
+    s2cMessages.clear();
+    c2sState.clear();
+    s2cState.clear();
+    // 清空缓冲区 - 使用erase_up_to方法删除所有内容
+    if (c2sBuffer.size() > 0) {
+        c2sBuffer.erase_up_to(c2sBuffer.size() - 1);
+    }
+    if (s2cBuffer.size() > 0) {
+        s2cBuffer.erase_up_to(s2cBuffer.size() - 1);
+    }
+}
+
+void Flow::updateLastActivityTime() {
+    // 更新流的最后活动时间为当前时间
+    lastActivityTime = time(nullptr);
+}
+
+bool Flow::isTimeout(size_t timeoutSeconds) const {
+    // 获取当前时间
+    time_t currentTime = time(nullptr);
+    
+    // 计算时间差（秒）
+    double diffSeconds = difftime(currentTime, lastActivityTime);
+    
+    // 如果时间差大于超时时间，则认为流已超时
+    return diffSeconds > timeoutSeconds;
+}
+
 //-------------------- HashFlowTable 类实现 --------------------
 
 /**
- * 将字符串格式的IP地址转换为四元组中的IP表示
+ * 将字符串格式的IP地址转换为四元组中的IP表示(但是现在不用了)
  * @param ipStr IP地址字符串
  * @param tuple 目标四元组
  * @param isSource 是否为源IP
@@ -106,13 +160,17 @@ bool convertStringToIP(const std::string& ipStr, FourTuple& tuple, bool isSource
     return false;
 }
 
-HashFlowTable::HashFlowTable() {
+HashFlowTable::HashFlowTable() : stopThread(false) {
     // 初始化哈希流表
     // TODO: 实现初始化逻辑
 }
 
 HashFlowTable::~HashFlowTable() {
+    // 停止清理线程
+    stopCleanupThread();
+    
     // 释放所有流对象
+    std::lock_guard<std::mutex> lock(flowMapMutex);
     for (auto& pair : flowMap) {
         delete pair.second;
     }
@@ -122,6 +180,9 @@ HashFlowTable::~HashFlowTable() {
 Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     // 计算四元组的哈希值
     int hash = hashFourTuple(fourTuple);
+    
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
     
     // 查找是否已存在对应的流
     auto it = flowMap.find(hash);
@@ -178,6 +239,9 @@ bool HashFlowTable::processPacket(const InputPacket& packet) {
         return false;
     }
     
+    // 更新流的最后活动时间
+    flow->updateLastActivityTime();
+    
     // 根据数据包方向添加数据
     if (packet.type == "C2S") {
         flow->addC2SData(packet.payload);
@@ -194,22 +258,146 @@ bool HashFlowTable::processPacket(const InputPacket& packet) {
 }
 
 void HashFlowTable::cleanupMarkedFlows() {
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
+    
     // 清理标记为删除的流
-    // 1. 遍历所有流
-    // 2. 删除标记为删除的流
-    // TODO: 实现清理逻辑
+    auto it = flowMap.begin();
+    while (it != flowMap.end()) {
+        if (it->second && it->second->isMarkedForDeletion()) {
+            // 获取当前流的指针
+            Flow* flowToDelete = it->second;
+            
+            // 查找所有指向这个流的映射
+            std::vector<int> keysToRemove;
+            for (auto& pair : flowMap) {
+                if (pair.second == flowToDelete) {
+                    keysToRemove.push_back(pair.first);
+                }
+            }
+            
+            // 从映射中删除所有引用
+            for (int key : keysToRemove) {
+                flowMap.erase(key);
+            }
+            
+            // 调用流的清理方法
+            flowToDelete->cleanup();
+            
+            // 删除流对象
+            delete flowToDelete;
+            
+            // 重新开始迭代，因为我们已经修改了映射
+            it = flowMap.begin();
+        } else {
+            ++it;
+        }
+    }
+}
+
+void HashFlowTable::checkTimeoutFlows(size_t timeoutSeconds) {
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
+    
+    // 检查并标记超时的流
+    std::set<Flow*> processedFlows;
+    
+    // 遍历所有流
+    for (const auto& pair : flowMap) {
+        // 确保每个流只处理一次
+        if (processedFlows.find(pair.second) == processedFlows.end()) {
+            // 检查流是否超时
+            if (pair.second->isTimeout(timeoutSeconds)) {
+                // 标记超时的流为可删除
+                pair.second->markForDeletion();
+                std::cout << "流已超时，标记为删除" << std::endl;
+            }
+            processedFlows.insert(pair.second);
+        }
+    }
+}
+
+void HashFlowTable::startCleanupThread(size_t checkIntervalSeconds, size_t timeoutSeconds) {
+    // 如果线程已经在运行，先停止它
+    stopCleanupThread();
+    
+    // 重置停止标志
+    stopThread = false;
+    
+    // 启动新的清理线程
+    cleanupThread = std::thread(&HashFlowTable::cleanupThreadFunction, this, checkIntervalSeconds, timeoutSeconds);
+    
+    std::cout << "清理线程已启动，检查间隔: " << checkIntervalSeconds << "秒，超时时间: " << timeoutSeconds << "秒" << std::endl;
+}
+
+void HashFlowTable::stopCleanupThread() {
+    // 如果线程在运行，停止它
+    if (cleanupThread.joinable()) {
+        // 设置停止标志
+        stopThread = true;
+        
+        // 等待线程结束
+        cleanupThread.join();
+        
+        std::cout << "清理线程已停止" << std::endl;
+    }
+}
+
+void HashFlowTable::cleanupThreadFunction(size_t checkIntervalSeconds, size_t timeoutSeconds) {
+    // 清理线程主循环
+    while (!stopThread) {
+        // 检查超时流
+        checkTimeoutFlows(timeoutSeconds);
+        
+        // 清理标记为删除的流
+        cleanupMarkedFlows();
+        
+        // 休眠指定的检查间隔时间
+        std::this_thread::sleep_for(std::chrono::seconds(checkIntervalSeconds));
+    }
 }
 
 size_t HashFlowTable::getTotalFlows() const {
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
+    
     // 获取流总数
     return flowMap.size();
 }
 
 void HashFlowTable::outputResults() const {
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
+    
     // 输出所有流的处理结果
-    // 1. 遍历所有流
-    // 2. 调用每个流的outputMessages方法
-    // TODO: 实现输出逻辑
+    static std::set<Flow*> processedFlows;
+    for (const auto& pair : flowMap) {
+        // 确保每个流只输出一次（因为同一个流可能有两个哈希键）
+        if (processedFlows.find(pair.second) == processedFlows.end()) {
+            pair.second->outputMessages();
+            processedFlows.insert(pair.second);
+        }
+    }
+    // 清空已处理流的集合，为下一次调用做准备
+    processedFlows.clear();
+}
+
+std::vector<Flow*> HashFlowTable::getAllFlows() {
+    // 加锁保护流映射表
+    std::lock_guard<std::mutex> lock(flowMapMutex);
+    
+    std::vector<Flow*> result;
+    std::set<Flow*> uniqueFlows;
+    
+    // 遍历所有流，确保每个流只添加一次
+    for (const auto& pair : flowMap) {
+        if (uniqueFlows.find(pair.second) == uniqueFlows.end()) {
+            result.push_back(pair.second);
+            uniqueFlows.insert(pair.second);
+        }
+    }
+    
+    return result;
 }
 
 int HashFlowTable::hashFourTuple(const FourTuple& fourTuple) const {
