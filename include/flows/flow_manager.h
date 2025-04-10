@@ -4,10 +4,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <list>
 #include <ctime>
-#include <thread>
-#include <atomic>
-#include <mutex>
 #include "../tools/types.h"
 #include "../tools/CircularString.h"
 
@@ -28,11 +26,17 @@ struct InputPacket {
 class Flow {
 public:
     /**
-     * @brief 构造函数
+     * @brief 构造函数（传统方式，接收两个方向的四元组）
      * @param c2sTuple C2S方向的四元组
      * @param s2cTuple S2C方向的四元组
      */
     Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple);
+
+    /**
+     * @brief 简化构造函数（优化方式，只接收C2S方向的四元组）
+     * @param c2sTuple C2S方向的四元组
+     */
+    Flow(const FourTuple& c2sTuple);
 
     /**
      * @brief 向C2S缓冲区添加数据
@@ -64,32 +68,39 @@ public:
     void outputMessages() const;
 
     /**
-     * @brief 标记流可以删除
-     */
-    void markForDeletion();
-
-    /**
-     * @brief 检查流是否标记为删除
-     * @return 流是否可以删除
-     */
-    bool isMarkedForDeletion() const;
-
-    /**
      * @brief 清理流对象的资源
      */
     void cleanup();
-
+    
     /**
      * @brief 更新流的最后活动时间
      */
     void updateLastActivityTime();
-
+    
+    /**
+     * @brief 获取流的最后活动时间
+     * @return 最后活动时间
+     */
+    time_t getLastActivityTime() const;
+    
     /**
      * @brief 检查流是否超时
      * @param timeoutSeconds 超时秒数
      * @return 流是否超时
      */
     bool isTimeout(size_t timeoutSeconds) const;
+
+    /**
+     * @brief 获取C2S方向的四元组
+     * @return C2S方向的四元组
+     */
+    const FourTuple& getC2STuple() const { return c2sTuple; }
+    
+    /**
+     * @brief 获取S2C方向的四元组
+     * @return S2C方向的四元组
+     */
+    const FourTuple& getS2CTuple() const { return s2cTuple; }
 
 private:
     FourTuple c2sTuple;                    // C2S方向的四元组
@@ -100,7 +111,6 @@ private:
     std::vector<std::string> s2cState;     // S2C方向的状态
     CircularString c2sBuffer;              // C2S方向的数据缓冲区
     CircularString s2cBuffer;              // S2C方向的数据缓冲区
-    bool markedForDeletion;                // 是否标记为删除
     time_t lastActivityTime;               // 最后活动时间
 };
 
@@ -134,27 +144,21 @@ public:
     bool processPacket(const InputPacket& packet);
 
     /**
-     * @brief 清理标记为删除的流
+     * @brief 设置流超时时间（秒）
+     * @param seconds 超时秒数
      */
-    void cleanupMarkedFlows();
+    void setFlowTimeout(size_t seconds);
 
     /**
-     * @brief 检查并标记超时的流
-     * @param timeoutSeconds 超时秒数，默认120秒
+     * @brief 检查并清理超时的流
      */
-    void checkTimeoutFlows(size_t timeoutSeconds = 120);
-
+    void checkAndCleanupTimeoutFlows();
+    
     /**
-     * @brief 启动清理线程
-     * @param checkIntervalSeconds 检查间隔秒数，默认10秒
-     * @param timeoutSeconds 流超时秒数，默认120秒
+     * @brief 删除指定的流
+     * @param flow 要删除的流指针
      */
-    void startCleanupThread(size_t checkIntervalSeconds = 10, size_t timeoutSeconds = 120);
-
-    /**
-     * @brief 停止清理线程
-     */
-    void stopCleanupThread();
+    void deleteFlow(Flow* flow);
 
     /**
      * @brief 获取流总数
@@ -180,18 +184,36 @@ private:
      * @return 哈希值
      */
     int hashFourTuple(const FourTuple& fourTuple) const;
+    
+    /**
+     * @brief 比较两个四元组是否相等
+     * @param tuple1 第一个四元组
+     * @param tuple2 第二个四元组
+     * @return 如果相等返回true，否则返回false
+     */
+    bool isFourTupleEqual(const FourTuple& tuple1, const FourTuple& tuple2) const;
 
     /**
-     * @brief 清理线程函数
-     * @param checkIntervalSeconds 检查间隔秒数
-     * @param timeoutSeconds 流超时秒数
+     * @brief 将流添加到时间排序的链表中
+     * @param flow 要添加的流
      */
-    void cleanupThreadFunction(size_t checkIntervalSeconds, size_t timeoutSeconds);
+    void addToTimeOrderedList(Flow* flow);
 
-    std::unordered_map<int, Flow*> flowMap;  // 流映射表
-    std::thread cleanupThread;               // 清理线程
-    std::atomic<bool> stopThread;            // 停止线程标志
-    mutable std::mutex flowMapMutex;         // 流映射表互斥锁
+    /**
+     * @brief 从时间排序的链表中移除流
+     * @param flow 要移除的流
+     */
+    void removeFromTimeOrderedList(Flow* flow);
+
+    /**
+     * @brief 更新流在时间排序链表中的位置
+     * @param flow 要更新的流
+     */
+    void updateFlowPosition(Flow* flow);
+
+    std::unordered_map<int, Flow*> flowMap;               // 流映射表
+    std::list<Flow*> timeOrderedFlows;                    // 按时间排序的流列表
+    size_t flowTimeoutSeconds;                            // 流超时时间（秒）
 };
 
 } // namespace flow_table

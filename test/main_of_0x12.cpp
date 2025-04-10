@@ -44,7 +44,36 @@ typedef struct {
     unsigned int Volume;   // 容　　限
 } TASK;
 
-// 数据过滤(我们主要要干的地方)
+// 全局变量（可以在不同函数间共享）
+static flow_table::HashFlowTable* flowTable = nullptr;
+
+// ------------------------------ 1. 全局初始化 ------------------------------
+// 该部分只在程序启动时执行一次
+void GlobalInit() {
+    std::cout << "执行全局初始化..." << std::endl;
+    
+    // 在全局初始化中可以加载配置文件、初始化全局资源等
+    // 对于当前项目，暂时没有需要全局初始化的内容
+    
+    std::cout << "全局初始化完成" << std::endl;
+}
+
+// ------------------------------ 2. 单线程初始化 ------------------------------
+// 该部分在每个工作线程启动时执行
+void ThreadInit() {
+    std::cout << "执行线程初始化..." << std::endl;
+    
+    // 创建哈希流表（每个线程一个实例）
+    flowTable = new flow_table::HashFlowTable();
+    
+    // 设置流超时时间为120秒
+    flowTable->setFlowTimeout(120);
+    
+    std::cout << "线程初始化完成" << std::endl;
+}
+
+// ------------------------------ 3. Filter 处理函数 ------------------------------
+// 数据过滤函数，处理每个数据包
 int Filter(TASK *Import, TASK **Export) {
     // 置动作为通告
     *Export = Import;
@@ -54,46 +83,56 @@ int Filter(TASK *Import, TASK **Export) {
             // 设置动作为转发
             (*Export)->Action = 0X22;
 
-            // 加处理
-            /*
-            此处的处理为:
-            1. 创建好 HashFlowTable 类
-            2. 根据 TASK 中的源端和宿端创建四元组,如果源端的 Role 是 C ,那么创建的四元组是 C2S,否则是 S2C
-            3. 根据四元组和 TASK 中的 Buffer 及 Length 创建 InputPacket
-            4. 根据 InputPacket 创建 Flow(通过 HashFlowTable 的 processPacket)
-            5. 调用对应的 Parser 函数，解析结果会存储在对应的 messages 中
-            6. 释放资源
-            */
-
-            // 1. 创建好 HashFlowTable 类
-            static flow_table::HashFlowTable flowTable;
-            
-            // 启动清理线程，每5秒检查一次，超时时间为120秒
-            std::cout << "启动清理线程..." << std::endl;
-            flowTable.startCleanupThread(5, 120);
-            
             // 2. 根据 TASK 中的源端和宿端创建四元组
             FourTuple fourTuple;
             
-            // 设置源IP和端口
-            if (Import->Source.IPvN == 4) {
-                fourTuple.srcIPvN = 4;
-                fourTuple.srcIPv4 = Import->Source.IPv4;
-            } else if (Import->Source.IPvN == 6) {
-                fourTuple.srcIPvN = 6;
-                memcpy(fourTuple.srcIPv6, Import->Source.IPv6, 16);
-            }
-            fourTuple.sourcePort = Import->Source.Port;
+            // 判断数据包方向
+            bool isC2S = (Import->Source.Role == 'C');
             
-            // 设置目标IP和端口
-            if (Import->Target.IPvN == 4) {
-                fourTuple.dstIPvN = 4;
-                fourTuple.dstIPv4 = Import->Target.IPv4;
-            } else if (Import->Target.IPvN == 6) {
-                fourTuple.dstIPvN = 6;
-                memcpy(fourTuple.dstIPv6, Import->Target.IPv6, 16);
+            // 设置源IP和端口 - 始终保持C2S方向
+            if (isC2S) {
+                // C2S方向，正常设置
+                // 设置源IP（客户端）
+                if (Import->Source.IPvN == 4) {
+                    fourTuple.srcIPvN = 4;
+                    fourTuple.srcIPv4 = Import->Source.IPv4;
+                } else if (Import->Source.IPvN == 6) {
+                    fourTuple.srcIPvN = 6;
+                    memcpy(fourTuple.srcIPv6, Import->Source.IPv6, 16);
+                }
+                fourTuple.sourcePort = Import->Source.Port;
+                
+                // 设置目标IP（服务器）
+                if (Import->Target.IPvN == 4) {
+                    fourTuple.dstIPvN = 4;
+                    fourTuple.dstIPv4 = Import->Target.IPv4;
+                } else if (Import->Target.IPvN == 6) {
+                    fourTuple.dstIPvN = 6;
+                    memcpy(fourTuple.dstIPv6, Import->Target.IPv6, 16);
+                }
+                fourTuple.destPort = Import->Target.Port;
+            } else {
+                // S2C方向，反转方向使其成为C2S方向
+                // 设置源IP（客户端，即Target）
+                if (Import->Target.IPvN == 4) {
+                    fourTuple.srcIPvN = 4;
+                    fourTuple.srcIPv4 = Import->Target.IPv4;
+                } else if (Import->Target.IPvN == 6) {
+                    fourTuple.srcIPvN = 6;
+                    memcpy(fourTuple.srcIPv6, Import->Target.IPv6, 16);
+                }
+                fourTuple.sourcePort = Import->Target.Port;
+                
+                // 设置目标IP（服务器，即Source）
+                if (Import->Source.IPvN == 4) {
+                    fourTuple.dstIPvN = 4;
+                    fourTuple.dstIPv4 = Import->Source.IPv4;
+                } else if (Import->Source.IPvN == 6) {
+                    fourTuple.dstIPvN = 6;
+                    memcpy(fourTuple.dstIPv6, Import->Source.IPv6, 16);
+                }
+                fourTuple.destPort = Import->Source.Port;
             }
-            fourTuple.destPort = Import->Target.Port;
             
             // 3. 创建InputPacket，只包含数据、类型和四元组
             flow_table::InputPacket packet;
@@ -103,34 +142,17 @@ int Filter(TASK *Import, TASK **Export) {
             packet.payload = payload;
             
             // 设置数据包类型（即源角色）
-            packet.type = (Import->Source.Role == 'C') ? "C2S" : "S2C";
+            packet.type = isC2S ? "C2S" : "S2C";
             
-            // 上面已经创建好了四元组
+            // 设置四元组 - 现在四元组始终是C2S方向
             packet.fourTuple = fourTuple;
             
-            // 4. 根据 InputPacket 创建 Flow(通过 HashFlowTable 的 processPacket)
-            bool processed = flowTable.processPacket(packet);
+            // 4. 处理数据包
+            bool processed = flowTable->processPacket(packet);
             
-            // 5. 流内部会自动调用对应的 Parser 函数，解析结果会存储在对应的 messages 中
+            // 5. 输出处理结果
             if (processed) {
-                // 输出所有已解析的消息
-                flowTable.outputResults();
-                
-                // 6. 释放资源
-                std::cout << "开始释放资源..." << std::endl;
-                
-                // 停止清理线程
-                flowTable.stopCleanupThread();
-                
-                // 标记所有流可以删除
-                for (auto& flow : flowTable.getAllFlows()) {
-                    flow->markForDeletion();
-                }
-                
-                // 手动清理所有标记为删除的流
-                flowTable.cleanupMarkedFlows();
-                
-                std::cout << "资源释放完成" << std::endl;
+                flowTable->outputResults();
             }
 
             break;
@@ -143,9 +165,61 @@ int Filter(TASK *Import, TASK **Export) {
     return 0;
 }
 
+// ------------------------------ 4. Remove 清理函数 ------------------------------
+// 负责资源释放和清理
+void Remove() {
+    std::cout << "执行清理..." << std::endl;
+    
+    // 清理所有资源
+    if (flowTable != nullptr) {
+        // 获取所有流对象并输出最终结果
+        flowTable->outputResults();
+        
+        // 删除哈希流表
+        delete flowTable;
+        flowTable = nullptr;
+    }
+    
+    std::cout << "清理完成" << std::endl;
+}
+
+// 测试主函数，模拟插件的使用
 int main() {
+    // 1. 全局初始化（只执行一次）
+    GlobalInit();
+    
+    // 2. 线程初始化（每个线程执行一次）
+    ThreadInit();
+    
+    // 3. 创建测试数据包
     TASK task;
     task.Inform = 0x12;
+    task.Source.Role = 'C';
+    task.Source.IPvN = 4;
+    task.Source.IPv4 = 0x01020304; // 1.2.3.4
+    task.Source.Port = 1234;
+    task.Target.Role = 'S';
+    task.Target.IPvN = 4;
+    task.Target.IPv4 = 0x05060708; // 5.6.7.8
+    task.Target.Port = 80;
+    
+    // 为了测试，设置一些数据
+    const char* testData = "TEST DATA";
+    size_t dataLen = strlen(testData);
+    unsigned char* buffer = new unsigned char[dataLen];
+    memcpy(buffer, testData, dataLen);
+    
+    task.Buffer = buffer;
+    task.Length = dataLen;
+    
+    // 处理数据包
     Filter(&task, nullptr);
+    
+    // 释放测试数据
+    delete[] buffer;
+    
+    // 4. 清理资源（程序结束时执行）
+    Remove();
+    
     return 0;
 }
