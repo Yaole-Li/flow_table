@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
+#include <map>
 #include <list>
 #include <ctime>
 #include "../tools/types.h"
@@ -73,22 +75,22 @@ public:
     void cleanup();
     
     /**
-     * @brief 更新流的最后活动时间
+     * @brief 更新流的最后活动时间为当前时间
      */
     void updateLastActivityTime();
-    
+
     /**
-     * @brief 获取流的最后活动时间
-     * @return 最后活动时间
+     * @brief 获取流的最后活动时间（毫秒）
+     * @return 最后活动时间（毫秒时间戳）
      */
-    time_t getLastActivityTime() const;
+    int64_t getLastActivityTime() const;
     
     /**
      * @brief 检查流是否超时
-     * @param timeoutSeconds 超时秒数
-     * @return 流是否超时
+     * @param timeoutMilliseconds 超时时间（毫秒）
+     * @return 如果流超时返回true，否则返回false
      */
-    bool isTimeout(size_t timeoutSeconds) const;
+    bool isTimeout(size_t timeoutMilliseconds) const;
 
     /**
      * @brief 获取C2S方向的四元组
@@ -111,7 +113,7 @@ private:
     std::vector<std::string> s2cState;     // S2C方向的状态
     CircularString c2sBuffer;              // C2S方向的数据缓冲区
     CircularString s2cBuffer;              // S2C方向的数据缓冲区
-    time_t lastActivityTime;               // 最后活动时间
+    int64_t lastActivityTime;              // 最后活动时间（毫秒时间戳）
 };
 
 /**
@@ -144,10 +146,10 @@ public:
     bool processPacket(const InputPacket& packet);
 
     /**
-     * @brief 设置流超时时间（秒）
-     * @param seconds 超时秒数
+     * @brief 设置流超时时间
+     * @param milliseconds 超时时间（毫秒）
      */
-    void setFlowTimeout(size_t seconds);
+    void setFlowTimeout(size_t milliseconds);
 
     /**
      * @brief 检查并清理超时的流
@@ -186,14 +188,6 @@ private:
     int hashFourTuple(const FourTuple& fourTuple) const;
     
     /**
-     * @brief 比较两个四元组是否相等
-     * @param tuple1 第一个四元组
-     * @param tuple2 第二个四元组
-     * @return 如果相等返回true，否则返回false
-     */
-    bool isFourTupleEqual(const FourTuple& tuple1, const FourTuple& tuple2) const;
-
-    /**
      * @brief 将流添加到时间排序的链表中
      * @param flow 要添加的流
      */
@@ -213,7 +207,35 @@ private:
 
     std::unordered_map<int, Flow*> flowMap;               // 流映射表
     std::list<Flow*> timeOrderedFlows;                    // 按时间排序的流列表
-    size_t flowTimeoutSeconds;                            // 流超时时间（秒）
+    size_t flowTimeoutMilliseconds = 120000;              // 默认流超时时间120000毫秒（2分钟）
+    
+    // 时间桶数据结构（用于优化超时检查）
+    using TimeBucket = std::unordered_set<Flow*>;         // 使用unordered_set
+    std::map<int64_t, TimeBucket> timeBuckets;            // 按时间戳映射的流桶（毫秒）
+    const int64_t BUCKET_INTERVAL = 1000;                 // 每个桶的时间间隔（毫秒）
+    
+    /**
+     * @brief 添加流到时间桶中
+     * @param flow 要添加的流
+     * @param timestampMs 时间戳（毫秒）
+     */
+    void addToTimeBucket(Flow* flow, int64_t timestampMs);
+    
+    /**
+     * @brief 从时间桶中移除流
+     * @param flow 要移除的流
+     * @param timestampMs 原先所在的时间戳（毫秒）
+     */
+    void removeFromTimeBucket(Flow* flow, int64_t timestampMs);
+    
+    /**
+     * @brief 移动流到新的时间桶
+     * @param flow 要移动的流
+     * @param oldTimestampMs 原时间戳（毫秒）
+     * @param newTimestampMs 新时间戳（毫秒）
+     */
+    void moveToNewTimeBucket(Flow* flow, int64_t oldTimestampMs, int64_t newTimestampMs);
+
 };
 
 } // namespace flow_table

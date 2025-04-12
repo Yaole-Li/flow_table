@@ -52,8 +52,7 @@ static flow_table::HashFlowTable* flowTable = nullptr;
 void GlobalInit() {
     std::cout << "执行全局初始化..." << std::endl;
     
-    // 在全局初始化中可以加载配置文件、初始化全局资源等
-    // 对于当前项目，暂时没有需要全局初始化的内容
+    // 暂时想不到要放什么
     
     std::cout << "全局初始化完成" << std::endl;
 }
@@ -67,7 +66,7 @@ void ThreadInit() {
     flowTable = new flow_table::HashFlowTable();
     
     // 设置流超时时间为120秒
-    flowTable->setFlowTimeout(120);
+    flowTable->setFlowTimeout(120000);
     
     std::cout << "线程初始化完成" << std::endl;
 }
@@ -176,6 +175,7 @@ void Remove() {
         flowTable->outputResults();
         
         // 删除哈希流表
+        // 用析构函数
         delete flowTable;
         flowTable = nullptr;
     }
@@ -185,6 +185,15 @@ void Remove() {
 
 // 测试主函数，模拟插件的使用
 int main() {
+    /*
+    修改了以下问题: 
+    1.不做线程，每次包过来的时候都看下最旧的流是否超时。 
+    2.logout的时候直接清理 
+    3.解决哈希冲突 
+    4.四元组反向 
+    5.输出Message后判断超时，重点是建立一个虚拟链表，按照时间排序(我用了时间桶算法)
+    */
+
     // 1. 全局初始化（只执行一次）
     GlobalInit();
     
@@ -203,8 +212,8 @@ int main() {
     task.Target.IPv4 = 0x05060708; // 5.6.7.8
     task.Target.Port = 80;
     
-    // 为了测试，设置一些数据
-    const char* testData = "TEST DATA";
+    // 创建测试数据
+    const char* testData = "a0004 FETCH 1:13 (FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)])";
     size_t dataLen = strlen(testData);
     unsigned char* buffer = new unsigned char[dataLen];
     memcpy(buffer, testData, dataLen);

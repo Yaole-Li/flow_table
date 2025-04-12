@@ -4,8 +4,9 @@
 #include <set>
 #include <algorithm>
 #include <cctype>
-#include <ctime>
+#include <chrono>
 #include <list>
+#include <map>
 
 namespace flow_table {
 
@@ -16,7 +17,8 @@ Flow::Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple)
       s2cTuple(s2cTuple),
       c2sBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
       s2cBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
-      lastActivityTime(time(nullptr)) { // 初始化最后活动时间为当前时间
+      lastActivityTime(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count()) { // 初始化最后活动时间为当前时间（毫秒）
     // 初始化流对象
     // TODO: 实现初始化逻辑
 }
@@ -25,7 +27,8 @@ Flow::Flow(const FourTuple& c2sTuple)
     : c2sTuple(c2sTuple),
       c2sBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
       s2cBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
-      lastActivityTime(time(nullptr)) { // 初始化最后活动时间为当前时间
+      lastActivityTime(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count()) { // 初始化最后活动时间为当前时间（毫秒）
     
     // 自动生成S2C方向的四元组（反转C2S四元组）
     s2cTuple.srcIPvN = c2sTuple.dstIPvN;
@@ -119,24 +122,23 @@ void Flow::cleanup() {
 }
 
 void Flow::updateLastActivityTime() {
-    // 更新流的最后活动时间为当前时间
-    lastActivityTime = time(nullptr);
+    // 更新最后活动时间为当前时间（毫秒）
+    lastActivityTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-time_t Flow::getLastActivityTime() const {
-    // 返回流的最后活动时间
+int64_t Flow::getLastActivityTime() const {
+    // 返回最后活动时间（毫秒）
     return lastActivityTime;
 }
 
-bool Flow::isTimeout(size_t timeoutSeconds) const {
-    // 获取当前时间
-    time_t currentTime = time(nullptr);
+bool Flow::isTimeout(size_t timeoutMilliseconds) const {
+    // 获取当前时间（毫秒）
+    int64_t currentTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     
-    // 计算时间差（秒）
-    double diffSeconds = difftime(currentTime, lastActivityTime);
-    
-    // 如果时间差大于超时时间，则认为流已超时
-    return diffSeconds > timeoutSeconds;
+    // 检查是否超时
+    return (currentTimeMs - lastActivityTime) > timeoutMilliseconds;
 }
 
 //-------------------- HashFlowTable 类实现 --------------------
@@ -181,9 +183,9 @@ bool convertStringToIP(const std::string& ipStr, FourTuple& tuple, bool isSource
     return false;
 }
 
-HashFlowTable::HashFlowTable() : flowTimeoutSeconds(120) {
+HashFlowTable::HashFlowTable() : flowTimeoutMilliseconds(120000) {
     // 初始化哈希流表
-    // 默认超时时间设置为120秒
+    // 默认超时时间为120000毫秒（2分钟）
 }
 
 HashFlowTable::~HashFlowTable() {
@@ -221,68 +223,141 @@ HashFlowTable::~HashFlowTable() {
     timeOrderedFlows.clear();
 }
 
-void HashFlowTable::setFlowTimeout(size_t seconds) {
-    // 设置流超时时间
-    flowTimeoutSeconds = seconds;
+void HashFlowTable::setFlowTimeout(size_t milliseconds) {
+    // 设置流超时时间（毫秒）
+    flowTimeoutMilliseconds = milliseconds;
+}
+
+void HashFlowTable::addToTimeBucket(Flow* flow, int64_t timestampMs) {
+    if (!flow) return;
+    
+    // 计算桶的时间戳（向下取整到最近的BUCKET_INTERVAL）
+    int64_t bucketTimeMs = timestampMs - (timestampMs % BUCKET_INTERVAL);
+    
+    // 添加到对应的时间桶
+    timeBuckets[bucketTimeMs].insert(flow);
+}
+
+void HashFlowTable::removeFromTimeBucket(Flow* flow, int64_t timestampMs) {
+    if (!flow) return;
+    
+    // 计算桶的时间戳
+    int64_t bucketTimeMs = timestampMs - (timestampMs % BUCKET_INTERVAL);
+    
+    // 使用键直接查找和操作，避免迭代器问题
+    if (timeBuckets.count(bucketTimeMs) > 0) {
+        TimeBucket& bucket = timeBuckets[bucketTimeMs];
+        bucket.erase(flow);
+        
+        // 如果桶为空，移除桶
+        if (bucket.empty()) {
+            timeBuckets.erase(bucketTimeMs);
+        }
+    }
+}
+
+void HashFlowTable::moveToNewTimeBucket(Flow* flow, int64_t oldTimestampMs, int64_t newTimestampMs) {
+    if (!flow) return;
+    
+    // 计算旧桶和新桶的时间戳
+    int64_t oldBucketTimeMs = oldTimestampMs - (oldTimestampMs % BUCKET_INTERVAL);
+    int64_t newBucketTimeMs = newTimestampMs - (newTimestampMs % BUCKET_INTERVAL);
+    
+    // 如果桶不同，则移动
+    if (oldBucketTimeMs != newBucketTimeMs) {
+        removeFromTimeBucket(flow, oldTimestampMs);
+        addToTimeBucket(flow, newTimestampMs);
+    }
 }
 
 void HashFlowTable::addToTimeOrderedList(Flow* flow) {
     // 将流添加到时间排序的链表末尾（最新）
     if (flow) {
         timeOrderedFlows.push_back(flow);
+        
+        // 添加到时间桶中
+        int64_t timestampMs = flow->getLastActivityTime();
+        addToTimeBucket(flow, timestampMs);
     }
 }
 
 void HashFlowTable::removeFromTimeOrderedList(Flow* flow) {
-    // 从时间排序的链表中移除流
+    // 从时间排序链表中移除流
     if (flow) {
         timeOrderedFlows.remove(flow);
+        
+        // 从时间桶中移除
+        int64_t timestampMs = flow->getLastActivityTime();
+        removeFromTimeBucket(flow, timestampMs);
     }
 }
 
 void HashFlowTable::updateFlowPosition(Flow* flow) {
-    // 更新流在时间排序链表中的位置
-    if (flow) {
-        // 先从链表中移除
-        removeFromTimeOrderedList(flow);
-        // 再添加到链表末尾（最新）
-        addToTimeOrderedList(flow);
-    }
+    if (!flow) return;
+    
+    // 保存旧的时间戳
+    int64_t oldTimestampMs = flow->getLastActivityTime();
+    
+    // 从链表中移除
+    removeFromTimeOrderedList(flow);
+    // 再添加到链表末尾（最新）
+    addToTimeOrderedList(flow);
+    
+    // 更新时间桶（在addToTimeOrderedList中已经添加到新桶）
+    // 这里不需要额外操作，因为removeFromTimeOrderedList已经从旧桶移除
 }
 
 void HashFlowTable::checkAndCleanupTimeoutFlows() {
-    // 检查并清理超时的流
-    time_t currentTime = time(nullptr);
+    // 获取当前时间（毫秒）
+    int64_t currentTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     
     // 创建一个临时向量存储要删除的流
     std::vector<Flow*> flowsToDelete;
     
-    // 从链表头部（最旧的流）开始检查
-    auto it = timeOrderedFlows.begin();
-    bool foundTimeout = false;
+    // 计算超时时间点
+    int64_t timeoutBeforeMs = currentTimeMs - flowTimeoutMilliseconds;
     
-    while (it != timeOrderedFlows.end()) {
-        Flow* flow = *it;
-        // 检查流是否超时
-        if (flow->isTimeout(flowTimeoutSeconds)) {
-            // 如果流超时，标记找到超时
-            foundTimeout = true;
-            flowsToDelete.push_back(flow);
-            it = timeOrderedFlows.erase(it); // 从链表中移除并更新迭代器
-        } else {
-            // 如果发现一个没有超时的流，且前面已经有超时的流，说明时间不是严格排序的
-            // 我们继续检查，但已经有排序问题了
-            if (foundTimeout) {
-                std::cerr << "警告: 时间排序链表中的流不是严格按时间排序的" << std::endl;
+    // 首先找出所有需要检查的时间桶键
+    std::vector<int64_t> bucketsToCheck;
+    for (const auto& pair : timeBuckets) {
+        if (pair.first <= timeoutBeforeMs) {
+            bucketsToCheck.push_back(pair.first);
+        }
+    } 
+    
+    // 现在处理这些桶
+    for (int64_t bucketTimeMs : bucketsToCheck) {
+        // 获取桶（如果还存在）
+        if (timeBuckets.count(bucketTimeMs) > 0) {
+            // 创建要检查的流的副本，避免在遍历过程中修改
+            std::vector<Flow*> flowsToCheck;
+            for (Flow* flow : timeBuckets[bucketTimeMs]) {
+                flowsToCheck.push_back(flow);
             }
-            // 如果没有找到超时的流，根据我们的规则，后面的流都不应该超时
-            // 但仍继续检查以确保链表正确
-            ++it;
+            
+            // 检查每个流
+            for (Flow* flow : flowsToCheck) {
+                if (flow->isTimeout(flowTimeoutMilliseconds)) {
+                    // 将超时流添加到待删除列表
+                    flowsToDelete.push_back(flow);
+                    // 从桶中移除
+                    timeBuckets[bucketTimeMs].erase(flow);
+                }
+            }
+            
+            // 如果桶为空，移除桶
+            if (timeBuckets[bucketTimeMs].empty()) {
+                timeBuckets.erase(bucketTimeMs);
+            }
         }
     }
     
     // 删除超时的流
     for (Flow* flow : flowsToDelete) {
+        // 从时间排序链表中移除
+        timeOrderedFlows.remove(flow);
+        // 删除流
         deleteFlow(flow);
     }
 }
@@ -291,15 +366,12 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     // 计算四元组的哈希值
     int hash = hashFourTuple(fourTuple);
     
-    // 检查并清理超时的流
-    checkAndCleanupTimeoutFlows();
-    
     // 在所有流中查找匹配的四元组
     // 这里需要遍历所有流，因为可能存在哈希冲突
     // 我们需要找到四元组完全匹配的流，而不仅仅是哈希值匹配的流
     for (const auto& pair : flowMap) {
         Flow* flow = pair.second;
-        if (isFourTupleEqual(flow->getC2STuple(), fourTuple)) {
+        if (flow->getC2STuple() == fourTuple) {
             // 找到了完全匹配四元组的流
             flow->updateLastActivityTime();
             // 更新流在时间排序链表中的位置
@@ -311,7 +383,7 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     // 如果未找到匹配的流，创建新流
     std::cout << "未找到匹配的流，创建新流" << std::endl;
     
-    // 查找一个可用的哈希值（处理可能的哈希冲突）
+    // 查找哈希值（处理可能的哈希冲突）
     int newHash = hash;
     while (flowMap.find(newHash) != flowMap.end()) {
         newHash++;
@@ -325,6 +397,9 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     
     // 将新流添加到时间排序的链表中
     addToTimeOrderedList(newFlow);
+
+    // 检查并清理超时的流
+    checkAndCleanupTimeoutFlows();
     
     return newFlow;
 }
@@ -448,28 +523,6 @@ int HashFlowTable::hashFourTuple(const FourTuple& fourTuple) const {
     hash = 31 * hash + fourTuple.destPort;
     
     return hash;
-}
-
-bool HashFlowTable::isFourTupleEqual(const FourTuple& tuple1, const FourTuple& tuple2) const {
-    // 比较两个四元组是否相等
-    if (tuple1.srcIPvN != tuple2.srcIPvN || tuple1.dstIPvN != tuple2.dstIPvN) {
-        return false;
-    }
-    
-    if (tuple1.srcIPvN == 4) {
-        // IPv4比较
-        return tuple1.srcIPv4 == tuple2.srcIPv4 && tuple1.dstIPv4 == tuple2.dstIPv4;
-    } else if (tuple1.srcIPvN == 6) {
-        // IPv6比较
-        for (int i = 0; i < 16; i++) {
-            if (tuple1.srcIPv6[i] != tuple2.srcIPv6[i] || tuple1.dstIPv6[i] != tuple2.dstIPv6[i]) {
-                return false;
-            }
-        }
-    }
-    
-    // 端口号比较
-    return tuple1.sourcePort == tuple2.sourcePort && tuple1.destPort == tuple2.destPort;
 }
 
 } // namespace flow_table
