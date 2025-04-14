@@ -54,7 +54,7 @@ public:
 
     /**
      * @brief 解析C2S缓冲区数据
-     * @return 是否成功解析
+     * @return 是否检测到 LOGOUT 命令
      */
     bool parseC2SData();
 
@@ -90,7 +90,7 @@ public:
      * @param timeoutMilliseconds 超时时间（毫秒）
      * @return 如果流超时返回true，否则返回false
      */
-    bool isTimeout(size_t timeoutMilliseconds) const;
+    bool isTimeout(int64_t timeoutMilliseconds) const;
 
     /**
      * @brief 获取C2S方向的四元组
@@ -149,7 +149,7 @@ public:
      * @brief 设置流超时时间
      * @param milliseconds 超时时间（毫秒）
      */
-    void setFlowTimeout(size_t milliseconds);
+    void setFlowTimeout(int64_t milliseconds);
 
     /**
      * @brief 检查并清理超时的流
@@ -205,9 +205,9 @@ private:
      */
     void updateFlowPosition(Flow* flow);
 
-    std::unordered_map<int, Flow*> flowMap;               // 流映射表
+    std::unordered_multimap<int, Flow*> flowMap;               // 流映射表，使用multimap支持哈希冲突
     std::list<Flow*> timeOrderedFlows;                    // 按时间排序的流列表
-    size_t flowTimeoutMilliseconds = 120000;              // 默认流超时时间120000毫秒（2分钟）
+    int64_t flowTimeoutMilliseconds = 120000;              // 默认流超时时间120000毫秒（2分钟）
     
     // 时间桶数据结构（用于优化超时检查）
     using TimeBucket = std::unordered_set<Flow*>;         // 使用unordered_set

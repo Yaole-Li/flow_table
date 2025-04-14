@@ -4,10 +4,11 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <algorithm>
 
 /**
  * @brief 环形字符串类，用于高效管理固定容量的字符缓冲区
- * 
+ *
  * 该类实现了一个环形缓冲区，当缓冲区满时，新添加的元素会覆盖最旧的元素。
  * 主要用于需要保留最近N个字符的场景，如日志记录、数据流处理等。
  */
@@ -20,6 +21,8 @@ private:
 
     // 将逻辑索引转换为物理索引
     size_t physical_index(size_t logical_index) const;
+    // 将物理索引转换为逻辑索引
+    size_t logical_index(size_t physical_index) const;
 
 public:
     /**
@@ -71,6 +74,24 @@ public:
      * @return 缓冲区容量
      */
     size_t cap() const noexcept;
+
+    /**
+     * @brief 根据索引获取元素值
+     * @param index 索引值
+     * @return 索引值对应的字符
+     * @throw std::out_of_range 如果索引超出范围
+     */
+    char at(size_t index);
+
+    /**
+     * @brief 从[start_index, end_index)范围内寻找指定字符
+     * @param start_index 起始索引（包含）
+     * @param end_index 结束索引（不包含）
+     * @param target 待查找字符
+     * @return 找到则返回字符首次出现时的索引，否则返回(size_t)(-1)
+     * @throw std::out_of_range 如果索引范围无效
+     */
+    size_t find(size_t start_index, size_t end_index, const char target);
 };
 
 #endif // CIRCULAR_STRING_H

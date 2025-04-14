@@ -1,4 +1,4 @@
-#include "../../include/tools/CircularString.h"
+#include "../include/tools/CircularString.h"
 #include <algorithm>
 #include <unordered_map>
 
@@ -7,8 +7,14 @@ size_t CircularString::physical_index(size_t logical_index) const {
     return (head + logical_index) % capacity;
 }
 
+// 将物理索引转换为逻辑索引
+// 物理索引是从头指针开始的，逻辑索引是从0开始的
+size_t CircularString::logical_index(size_t physical_index) const {
+    return (physical_index + capacity - head) % capacity;
+}
+
 // 构造函数，创建指定容量的环形字符串
-CircularString::CircularString(size_t size) 
+CircularString::CircularString(size_t size)
     : capacity(size), head(0), count(0) {
     if (capacity == 0) {
         throw std::invalid_argument("Capacity must be positive");
@@ -21,12 +27,13 @@ void CircularString::push_back(const std::string& str) {
     for (char c : str) {
         // 计算实际要插入的物理位置
         size_t insert_pos = physical_index(count);
-        
+
         if (count < capacity) {
             // 缓冲区未满，直接追加
             buffer[insert_pos] = c;
             ++count;
-        } else {
+        }
+        else {
             // 缓冲区已满，覆盖最旧元素并移动头指针
             buffer[insert_pos] = c;
             head = (head + 1) % capacity; // 最旧元素被覆盖，头指针向前移动
@@ -39,23 +46,23 @@ size_t CircularString::find_nth(const std::string& target, size_t n) const {
     if (target.empty()) {
         throw std::invalid_argument("查找目标不能为空字符串");
     }
-    
+
     const size_t target_len = target.length();
     const size_t buffer_len = count;
-    
+
     if (target_len > buffer_len) {
         throw std::out_of_range("字符串未找到足够次数");
     }
-    
+
     // Sunday算法预处理坏字符表
     std::unordered_map<char, size_t> bad_char_shift;
     for (size_t i = 0; i < target_len; ++i) {
         bad_char_shift[target[i]] = target_len - i;
     }
-    
+
     size_t occurrences = 0;
     size_t current = 0;
-    
+
     while (current <= buffer_len - target_len) {
         size_t j;
         // 检查匹配
@@ -63,24 +70,25 @@ size_t CircularString::find_nth(const std::string& target, size_t n) const {
             const size_t phys_idx = physical_index(current + j);
             if (buffer[phys_idx] != target[j]) break;
         }
-        
+
         if (j == target_len) {
             if (++occurrences == n) {
                 return current;
             }
             current += 1; // 找到匹配后移动1位继续查找
-        } else {
+        }
+        else {
             // 计算跳跃步长
             const size_t next_char_pos = current + target_len;
             if (next_char_pos >= buffer_len) break;
-            
+
             const char next_char = buffer[physical_index(next_char_pos)];
-            current += bad_char_shift.count(next_char) ? 
-                      bad_char_shift[next_char] : 
-                      target_len + 1;
+            current += bad_char_shift.count(next_char) ?
+                bad_char_shift[next_char] :
+                target_len + 1;
         }
     }
-    
+
     throw std::out_of_range("字符串未找到足够次数");
 }
 
@@ -117,4 +125,54 @@ size_t CircularString::size() const noexcept {
 // 获取缓冲区总容量
 size_t CircularString::cap() const noexcept {
     return capacity;
+}
+
+char CircularString::at(size_t index) {
+    if (index >= count) {
+        throw std::out_of_range("Input index of At() is out of range");
+    }
+    return buffer[physical_index(index)];
+}
+
+size_t CircularString::find(size_t start_index, size_t end_index, const char target) {
+    std::vector<char>::iterator target_it;
+    if (start_index >= end_index) {
+        return size_t(-1);
+    }
+    if (start_index >= count) {
+        throw std::out_of_range("start index out of range");
+    }
+    if (end_index > count) {
+        throw std::out_of_range("end index out of range");
+    }
+    size_t physical_start_index = physical_index(start_index);
+    size_t physical_end_index = physical_index(end_index);
+    //缓冲区没循环的情况下，std::find()一次
+    if (physical_start_index <= physical_end_index) {
+        target_it = std::find(buffer.begin() + physical_start_index, buffer.begin() + physical_end_index, target);
+        if (target_it == buffer.begin() + physical_end_index) {
+            return -1;
+        }
+        else {
+            return logical_index(target_it - buffer.begin());
+        }
+    }
+    //缓冲区循环的情况下，std::find()两次
+    else {
+        target_it = std::find(buffer.begin() + physical_start_index, buffer.end(), target); //先找后半段
+        if (target_it == buffer.end()) {
+            target_it = std::find(buffer.begin(), buffer.begin() + physical_end_index, target);   //后半段找不到再找前半段
+            if (target_it == buffer.begin() + physical_end_index) {
+                return -1;
+            }
+            else {
+                return logical_index(target_it - buffer.begin());
+            }
+        }
+        else {
+            return logical_index(target_it - buffer.begin());
+        }
+    }
+
+
 }

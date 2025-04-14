@@ -18,9 +18,24 @@ add_library(circular_string
     src/tools/CircularString.cpp
 )
 
+# 添加流管理库
+add_library(flow_manager
+    src/flows/flow_manager.cpp
+)
+
+# 链接流管理库与环形字符串库
+target_link_libraries(flow_manager
+    circular_string
+)
+
 # 添加测试可执行文件
 add_executable(test_circular_string 
     test/test_circular_string.cpp
+)
+
+# 添加IMAP解析测试可执行文件
+add_executable(test_imap_parsing
+    test/test_imap_parsing.cpp
 )
 
 # 链接库
@@ -28,12 +43,18 @@ target_link_libraries(test_circular_string
     circular_string
 )
 
+# 链接IMAP解析测试与流管理库
+target_link_libraries(test_imap_parsing
+    flow_manager
+)
+
 # 添加测试
 enable_testing()
 add_test(NAME CircularStringTest COMMAND test_circular_string)
+add_test(NAME ImapParsingTest COMMAND test_imap_parsing)
 
 # 安装规则
-install(TARGETS circular_string
+install(TARGETS circular_string flow_manager
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )

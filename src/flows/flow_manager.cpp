@@ -7,6 +7,11 @@
 #include <chrono>
 #include <list>
 #include <map>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <stdexcept>
+#include <iomanip>
 
 namespace flow_table {
 
@@ -53,13 +58,19 @@ Flow::Flow(const FourTuple& c2sTuple)
 
 void Flow::addC2SData(const std::string& data) {
     // 向C2S缓冲区添加数据
-    // TODO: 实现数据添加逻辑
+    if (!data.empty()) {
+        c2sBuffer.push_back(data);
+        std::cout << "添加C2S数据: " << data.size() << " 字节" << std::endl;
+    }
     updateLastActivityTime();
 }
 
 void Flow::addS2CData(const std::string& data) {
     // 向S2C缓冲区添加数据
-    // TODO: 实现数据添加逻辑
+    if (!data.empty()) {
+        s2cBuffer.push_back(data);
+        std::cout << "添加S2C数据: " << data.size() << " 字节" << std::endl;
+    }
     updateLastActivityTime();
 }
 
@@ -69,22 +80,236 @@ bool Flow::parseC2SData() {
     // 2. 解析命令格式
     // 3. 更新C2S状态
     // 4. 生成Message对象并添加到c2sMessages中
+
     // TODO: 实现解析逻辑
-    
-    // 检查是否有LOGOUT命令
-    for (const auto& message : c2sMessages) {
-        // 不区分大小写比较command字段是否为"logout"
-        std::string command = message.command;
-        std::transform(command.begin(), command.end(), command.begin(), 
+    Message current_message;    // 存储当前请求信息的结构体，如果解析正常结束则将其添加到c2sMessages尾端
+    std::string temp;           // 解析参数时可能会出现多个参数，用于暂存一个参数
+    size_t index = 0;              // 下一个要从line中读取的字符的位置
+    int left_bracket_count = 0;         // 用于解析参数时的括号匹配
+    char curren_char = c2sBuffer.at(index++);    // 当前正在被解析的字符
+    size_t end_line_index;
+
+    // 检查是否在处理APPEND命令的邮件内容
+    static bool processing_append = false;
+    static size_t bytes_to_read = 0;
+
+    try {
+        size_t buffer_size = c2sBuffer.size();
+        if (buffer_size == 0) {
+            std::cout << "缓冲区为空" << std::endl;
+            return false;
+        }
+
+        // 打印当前缓冲区内容（用于调试）
+        std::cout << "当前缓冲区内容: ";
+        for (size_t i = 0; i < std::min(buffer_size, (size_t)50); i++) {
+            if (c2sBuffer.at(i) >= 32 && c2sBuffer.at(i) <= 126) {
+                std::cout << c2sBuffer.at(i);
+            } else if (c2sBuffer.at(i) == '\r') {
+                std::cout << "\\r";
+            } else if (c2sBuffer.at(i) == '\n') {
+                std::cout << "\\n";
+            } else {
+                std::cout << "\\x" << std::hex << (int)c2sBuffer.at(i) << std::dec;
+            }
+        }
+        if (buffer_size > 50) {
+            std::cout << "...";
+        }
+        std::cout << std::endl;
+
+        // 如果正在处理APPEND命令的邮件内容
+        if (processing_append) {
+            std::cout << "正在处理APPEND命令的邮件内容，剩余 " << bytes_to_read << " 字节" << std::endl;
+
+            // 如果缓冲区中的数据不足以完成邮件内容的读取，则等待更多数据
+            if (buffer_size < bytes_to_read) {
+                bytes_to_read -= buffer_size;
+                c2sBuffer.erase_up_to(buffer_size);
+                std::cout << "邮件内容不完整，等待更多数据" << std::endl;
+                return false;
+            }
+
+            // 读取完整的邮件内容
+            std::string email_content;
+            for (size_t i = 0; i < bytes_to_read; i++) {
+                email_content.push_back(c2sBuffer.at(i));
+            }
+
+            // 创建一个消息对象来存储邮件内容
+            Message email_message;
+            email_message.tag = "EMAIL_CONTENT";
+            email_message.command = "APPEND_DATA";
+            email_message.args.push_back(email_content);
+            c2sMessages.push_back(email_message);
+
+            // 清除已处理的邮件内容
+            c2sBuffer.erase_up_to(bytes_to_read);
+
+            // 重置APPEND处理状态
+            processing_append = false;
+            bytes_to_read = 0;
+
+            std::cout << "邮件内容处理完成" << std::endl;
+            return false;
+        }
+
+        // 找回车换行
+        end_line_index = c2sBuffer.find(0, buffer_size, '\r');
+        if (end_line_index == (size_t)(-1)) {
+            std::cout << "缓冲区内未找到换行符" << std::endl;
+            return false;
+        }
+        try {
+            c2sBuffer.at(end_line_index + 1);
+        }
+        catch (std::out_of_range e) {
+            std::cout << "缓冲区的结尾是\\r" << std::endl;
+            return false;
+        }
+        if (c2sBuffer.at(end_line_index + 1) != '\n') {
+            end_line_index--;
+            throw std::runtime_error("回车换行不匹配");
+        }
+
+        // 解析标签的第一个字节
+        if (curren_char >= 33 && curren_char <= 126 && curren_char != '+' && curren_char != '*') {
+            current_message.tag.push_back(curren_char);
+            curren_char = c2sBuffer.at(index++);
+            //解析标签的剩余字节
+            while (curren_char >= 33 && curren_char <= 126) {
+                current_message.tag.push_back(curren_char);
+                curren_char = c2sBuffer.at(index++);
+            }
+        }
+        else {
+            throw std::runtime_error("Tag首字符不合法");
+        }
+        //删除标签和命令之间的空白符（空格和水平制表符）
+        while (curren_char == ' ' || curren_char == 9) {
+            curren_char = c2sBuffer.at(index++);
+        }
+        // 解析命令的第一个字节
+        if (curren_char >= 33 && curren_char <= 126) {
+            current_message.command.push_back(curren_char);
+            curren_char = c2sBuffer.at(index++);
+            //解析命令的剩余字节
+            while (curren_char >= 33 && curren_char <= 126) {
+                current_message.command.push_back(curren_char);
+                curren_char = c2sBuffer.at(index++);
+            }
+        }
+        else {
+            throw std::runtime_error("命令格式不合法");
+        }
+
+        std::cout << "解析到命令: " << current_message.tag << " " << current_message.command << std::endl;
+
+        // 转换命令为小写以便比较
+        std::string command_lower = current_message.command;
+        std::transform(command_lower.begin(), command_lower.end(), command_lower.begin(), 
                       [](unsigned char c){ return std::tolower(c); });
-        
-        if (command == "logout") {
-            // 发现LOGOUT命令，返回特殊标志，表示需要删除流
-            std::cout << "检测到LOGOUT命令" << std::endl;
+
+        // 检查当前命令是否为LOGOUT（不区分大小写）
+        bool isLogoutCommand = (command_lower == "logout");
+        if (isLogoutCommand) {
+            std::cout << "命令 " << current_message.command << " 被识别为LOGOUT命令" << std::endl;
+        }
+
+        //删除命令和参数之间的空白符（空格和水平制表符）
+        while (curren_char == ' ' || curren_char == 9) {
+            curren_char = c2sBuffer.at(index++);
+        }
+        //解析参数，直到遇见换行符
+        while (curren_char != '\r') {
+            temp.clear();
+            left_bracket_count = 0;
+            // 解析参数的第一个字节
+            if (curren_char >= 33 && curren_char <= 126) {
+                if (curren_char == '(') {
+                    left_bracket_count++;
+                }
+                temp.push_back(curren_char);
+                curren_char = c2sBuffer.at(index++);
+            }
+            else {
+                throw std::runtime_error("参数中发现不可打印字符");
+            }
+            //解析参数的剩余字节
+            while (curren_char >= 32 && curren_char <= 126) {
+                if (left_bracket_count == 0) {
+                    if (curren_char == ' ') {
+                        break;  //跳出while循环
+                    }
+                    else {
+                        if (curren_char == '(') {
+                            left_bracket_count ++;
+                        }
+                        temp.push_back(curren_char);
+                        curren_char = c2sBuffer.at(index++);
+                    }
+                }
+                else {
+                    if (curren_char == '(') {
+                        left_bracket_count++;
+                    }
+                    else if (curren_char == ')') {
+                        left_bracket_count--;
+                    }
+                    temp.push_back(curren_char);
+                    curren_char = c2sBuffer.at(index++);
+                }
+            }
+            current_message.args.push_back(temp);   //保存参数
+            //删除直到下一个参数之间的空白符（空格和水平制表符）
+            while (curren_char == ' ' || curren_char == 9) {
+                curren_char = c2sBuffer.at(index++);
+            }
+        }
+        curren_char = c2sBuffer.at(index++);
+        //最后把解析的Message放入c2sMessages末尾
+        c2sMessages.push_back(current_message);
+        c2sBuffer.erase_up_to(end_line_index + 2); // +2 to include \r\n
+
+        // 检查是否是APPEND命令，如果是，则设置处理状态
+        if (command_lower == "append" && current_message.args.size() >= 2) {
+            // 检查最后一个参数是否是字节数格式 {xxx}
+            std::string last_arg = current_message.args.back();
+            if (last_arg.size() >= 3 && last_arg.front() == '{' && last_arg.back() == '}') {
+                // 提取字节数
+                std::string bytes_str = last_arg.substr(1, last_arg.size() - 2);
+                try {
+                    bytes_to_read = std::stoi(bytes_str);
+                    processing_append = true;
+                    std::cout << "检测到APPEND命令，准备读取 " << bytes_to_read << " 字节的邮件内容" << std::endl;
+                } catch (const std::exception& e) {
+                    std::cerr << "解析APPEND命令字节数失败: " << e.what() << std::endl;
+                }
+            }
+        }
+
+        // 如果是LOGOUT命令，立即返回
+        if (isLogoutCommand) {
+            std::cout << "检测到LOGOUT命令，返回true" << std::endl;
             return true; // 返回true表示检测到LOGOUT命令
         }
     }
-    
+    catch (const std::runtime_error& e) {
+        std::cerr << e.what() << ":";   //打印错误信息
+        //打印原请求，不可打印字符用16进制ascii码显示
+        for (size_t i = 0; i < end_line_index; i++) {
+            if (c2sBuffer.at(i) >= 32 && c2sBuffer.at(i) <= 126) {
+                std::cerr << c2sBuffer.at(i);
+            }
+            else {
+                std::cerr << "\\0x" << std::setw(2) << std::setfill('0') << std::hex << int(c2sBuffer.at(i));
+            }
+        }
+        std::cerr << std::endl << std::dec;
+        c2sBuffer.erase_up_to(end_line_index + 2); // +2 to include \r\n
+        return false;
+    }
+
     return false; // 没有检测到LOGOUT命令
 }
 
@@ -101,9 +326,34 @@ bool Flow::parseS2CData() {
 
 void Flow::outputMessages() const {
     // 输出流中的消息数据
+
     // 1. 输出C2S方向的消息
+    std::cout << "\n===== C2S 方向消息 (" << c2sMessages.size() << " 条) =====" << std::endl;
+    for (size_t i = 0; i < c2sMessages.size(); ++i) {
+        const Message& msg = c2sMessages[i];
+        std::cout << "[" << i + 1 << "] 标签: " << msg.tag << ", 命令: " << msg.command;
+
+        // 输出参数
+        if (!msg.args.empty()) {
+            std::cout << ", 参数: ";
+            for (size_t j = 0; j < msg.args.size(); ++j) {
+                std::cout << msg.args[j];
+                if (j < msg.args.size() - 1) {
+                    std::cout << ", ";
+                }
+            }
+        }
+
+        // 输出邮件信息（如果有）
+        if (!msg.fetch.empty()) {
+            std::cout << ", 获取到 " << msg.fetch.size() << " 封邮件";
+        }
+
+        std::cout << std::endl;
+    }
+
     // 2. 输出S2C方向的消息
-    // TODO: 实现输出逻辑
+    // TODO: 实现S2C消息输出逻辑
 }
 
 void Flow::cleanup() {
@@ -132,11 +382,11 @@ int64_t Flow::getLastActivityTime() const {
     return lastActivityTime;
 }
 
-bool Flow::isTimeout(size_t timeoutMilliseconds) const {
+bool Flow::isTimeout(int64_t timeoutMilliseconds) const {
     // 获取当前时间（毫秒）
     int64_t currentTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    
+
     // 检查是否超时
     return (currentTimeMs - lastActivityTime) > timeoutMilliseconds;
 }
@@ -164,7 +414,7 @@ bool convertStringToIP(const std::string& ipStr, FourTuple& tuple, bool isSource
         }
         return true;
     }
-    
+
     // 尝试解析为IPv6地址
     struct sockaddr_in6 sa6;
     if (inet_pton(AF_INET6, ipStr.c_str(), &(sa6.sin6_addr)) == 1) {
@@ -178,7 +428,7 @@ bool convertStringToIP(const std::string& ipStr, FourTuple& tuple, bool isSource
         }
         return true;
     }
-    
+
     // 解析失败
     return false;
 }
@@ -192,12 +442,12 @@ HashFlowTable::~HashFlowTable() {
     // 释放所有流对象
     // 使用getAllFlows获取所有唯一的流对象
     std::vector<Flow*> allFlows = getAllFlows();
-    
+
     // 使用deleteFlow方法删除每个流
     for (Flow* flow : allFlows) {
         // 不使用时间链表排序的deleteFlow版本
         // 因为我们将删除所有流，不需要维护链表结构
-        
+
         // 查找所有指向这个流的映射
         std::vector<int> keysToRemove;
         for (auto& pair : flowMap) {
@@ -205,50 +455,50 @@ HashFlowTable::~HashFlowTable() {
                 keysToRemove.push_back(pair.first);
             }
         }
-        
+
         // 从映射中删除所有引用
         for (int key : keysToRemove) {
             flowMap.erase(key);
         }
-        
+
         // 调用流的清理方法
         flow->cleanup();
-        
+
         // 删除流对象
         delete flow;
     }
-    
+
     // 清空所有集合
     flowMap.clear();
     timeOrderedFlows.clear();
 }
 
-void HashFlowTable::setFlowTimeout(size_t milliseconds) {
+void HashFlowTable::setFlowTimeout(int64_t milliseconds) {
     // 设置流超时时间（毫秒）
     flowTimeoutMilliseconds = milliseconds;
 }
 
 void HashFlowTable::addToTimeBucket(Flow* flow, int64_t timestampMs) {
     if (!flow) return;
-    
+
     // 计算桶的时间戳（向下取整到最近的BUCKET_INTERVAL）
     int64_t bucketTimeMs = timestampMs - (timestampMs % BUCKET_INTERVAL);
-    
+
     // 添加到对应的时间桶
     timeBuckets[bucketTimeMs].insert(flow);
 }
 
 void HashFlowTable::removeFromTimeBucket(Flow* flow, int64_t timestampMs) {
     if (!flow) return;
-    
+
     // 计算桶的时间戳
     int64_t bucketTimeMs = timestampMs - (timestampMs % BUCKET_INTERVAL);
-    
+
     // 使用键直接查找和操作，避免迭代器问题
     if (timeBuckets.count(bucketTimeMs) > 0) {
         TimeBucket& bucket = timeBuckets[bucketTimeMs];
         bucket.erase(flow);
-        
+
         // 如果桶为空，移除桶
         if (bucket.empty()) {
             timeBuckets.erase(bucketTimeMs);
@@ -258,11 +508,11 @@ void HashFlowTable::removeFromTimeBucket(Flow* flow, int64_t timestampMs) {
 
 void HashFlowTable::moveToNewTimeBucket(Flow* flow, int64_t oldTimestampMs, int64_t newTimestampMs) {
     if (!flow) return;
-    
+
     // 计算旧桶和新桶的时间戳
     int64_t oldBucketTimeMs = oldTimestampMs - (oldTimestampMs % BUCKET_INTERVAL);
     int64_t newBucketTimeMs = newTimestampMs - (newTimestampMs % BUCKET_INTERVAL);
-    
+
     // 如果桶不同，则移动
     if (oldBucketTimeMs != newBucketTimeMs) {
         removeFromTimeBucket(flow, oldTimestampMs);
@@ -274,7 +524,7 @@ void HashFlowTable::addToTimeOrderedList(Flow* flow) {
     // 将流添加到时间排序的链表末尾（最新）
     if (flow) {
         timeOrderedFlows.push_back(flow);
-        
+
         // 添加到时间桶中
         int64_t timestampMs = flow->getLastActivityTime();
         addToTimeBucket(flow, timestampMs);
@@ -285,7 +535,7 @@ void HashFlowTable::removeFromTimeOrderedList(Flow* flow) {
     // 从时间排序链表中移除流
     if (flow) {
         timeOrderedFlows.remove(flow);
-        
+
         // 从时间桶中移除
         int64_t timestampMs = flow->getLastActivityTime();
         removeFromTimeBucket(flow, timestampMs);
@@ -294,15 +544,15 @@ void HashFlowTable::removeFromTimeOrderedList(Flow* flow) {
 
 void HashFlowTable::updateFlowPosition(Flow* flow) {
     if (!flow) return;
-    
+
     // 保存旧的时间戳
     int64_t oldTimestampMs = flow->getLastActivityTime();
-    
+
     // 从链表中移除
     removeFromTimeOrderedList(flow);
     // 再添加到链表末尾（最新）
     addToTimeOrderedList(flow);
-    
+
     // 更新时间桶（在addToTimeOrderedList中已经添加到新桶）
     // 这里不需要额外操作，因为removeFromTimeOrderedList已经从旧桶移除
 }
@@ -311,13 +561,13 @@ void HashFlowTable::checkAndCleanupTimeoutFlows() {
     // 获取当前时间（毫秒）
     int64_t currentTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    
+
     // 创建一个临时向量存储要删除的流
     std::vector<Flow*> flowsToDelete;
-    
+
     // 计算超时时间点
     int64_t timeoutBeforeMs = currentTimeMs - flowTimeoutMilliseconds;
-    
+
     // 首先找出所有需要检查的时间桶键
     std::vector<int64_t> bucketsToCheck;
     for (const auto& pair : timeBuckets) {
@@ -325,7 +575,7 @@ void HashFlowTable::checkAndCleanupTimeoutFlows() {
             bucketsToCheck.push_back(pair.first);
         }
     } 
-    
+
     // 现在处理这些桶
     for (int64_t bucketTimeMs : bucketsToCheck) {
         // 获取桶（如果还存在）
@@ -335,7 +585,7 @@ void HashFlowTable::checkAndCleanupTimeoutFlows() {
             for (Flow* flow : timeBuckets[bucketTimeMs]) {
                 flowsToCheck.push_back(flow);
             }
-            
+
             // 检查每个流
             for (Flow* flow : flowsToCheck) {
                 if (flow->isTimeout(flowTimeoutMilliseconds)) {
@@ -345,14 +595,14 @@ void HashFlowTable::checkAndCleanupTimeoutFlows() {
                     timeBuckets[bucketTimeMs].erase(flow);
                 }
             }
-            
+
             // 如果桶为空，移除桶
             if (timeBuckets[bucketTimeMs].empty()) {
                 timeBuckets.erase(bucketTimeMs);
             }
         }
     }
-    
+
     // 删除超时的流
     for (Flow* flow : flowsToDelete) {
         // 从时间排序链表中移除
@@ -365,12 +615,11 @@ void HashFlowTable::checkAndCleanupTimeoutFlows() {
 Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     // 计算四元组的哈希值
     int hash = hashFourTuple(fourTuple);
-    
-    // 在所有流中查找匹配的四元组
-    // 这里需要遍历所有流，因为可能存在哈希冲突
-    // 我们需要找到四元组完全匹配的流，而不仅仅是哈希值匹配的流
-    for (const auto& pair : flowMap) {
-        Flow* flow = pair.second;
+
+    // 使用equal_range高效查找特定哈希值下的所有流
+    auto range = flowMap.equal_range(hash);
+    for (auto it = range.first; it != range.second; ++it) {
+        Flow* flow = it->second;
         if (flow->getC2STuple() == fourTuple) {
             // 找到了完全匹配四元组的流
             flow->updateLastActivityTime();
@@ -379,56 +628,59 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
             return flow;
         }
     }
-    
+
     // 如果未找到匹配的流，创建新流
     std::cout << "未找到匹配的流，创建新流" << std::endl;
-    
-    // 查找哈希值（处理可能的哈希冲突）
-    int newHash = hash;
-    while (flowMap.find(newHash) != flowMap.end()) {
-        newHash++;
-    }
-    
+
     // 创建新流 - fourTuple是C2S方向
     Flow* newFlow = new Flow(fourTuple);
-    
-    // 存储流，使用可用的哈希值
-    flowMap[newHash] = newFlow;
-    
+
+    // 存储流，直接使用原始哈希值
+    flowMap.insert(std::make_pair(hash, newFlow));
+
     // 将新流添加到时间排序的链表中
     addToTimeOrderedList(newFlow);
 
     // 检查并清理超时的流
     checkAndCleanupTimeoutFlows();
-    
+
     return newFlow;
 }
 
 void HashFlowTable::deleteFlow(Flow* flow) {
     if (!flow) return;
-    
-    // 查找所有指向这个流的映射
-    std::vector<int> keysToRemove;
-    for (auto& pair : flowMap) {
+
+    // 在unordered_multimap中查找并删除特定流对象
+    // 我们需要遍历所有元素，找到值等于flow的键值对
+    using FlowMapIterator = std::unordered_multimap<int, Flow*>::iterator;
+    std::vector<std::pair<FlowMapIterator, FlowMapIterator>> rangesToRemove;
+
+    // 首先找出所有包含此流的键
+    std::vector<int> keysWithFlow;
+    for (const auto& pair : flowMap) {
         if (pair.second == flow) {
-            keysToRemove.push_back(pair.first);
+            keysWithFlow.push_back(pair.first);
         }
     }
-    
-    // 从映射中删除所有引用
-    for (int key : keysToRemove) {
-        flowMap.erase(key);
+
+    // 对于每个键，找到对应的流并删除
+    for (int key : keysWithFlow) {
+        auto range = flowMap.equal_range(key);
+        for (auto it = range.first; it != range.second; ++it) {
+            if (it->second == flow) {
+                // 找到了要删除的流，从flowMap中移除
+                flowMap.erase(it);
+                break; // 找到并删除后跳出内层循环
+            }
+        }
     }
-    
+
     // 确保从时间链表中移除
     removeFromTimeOrderedList(flow);
-    
+
     // 调用流的清理方法
     flow->cleanup();
-    
-    // 输出调试信息
-    std::cout << "删除流" << std::endl;
-    
+
     // 删除流对象
     delete flow;
 }
@@ -441,10 +693,10 @@ bool HashFlowTable::processPacket(const InputPacket& packet) {
         std::cerr << "创建流失败" << std::endl;
         return false;
     }
-    
+
     // 根据数据包类型添加数据并进行解析
     bool needDeleteFlow = false;
-    
+
     if (packet.type == "C2S") {
         flow->addC2SData(packet.payload);
         // 如果parseC2SData返回true，表示检测到LOGOUT命令
@@ -456,14 +708,14 @@ bool HashFlowTable::processPacket(const InputPacket& packet) {
         std::cerr << "未知的数据包类型" << std::endl;
         return false;
     }
-    
+
     // 如果检测到LOGOUT命令，直接删除流
     if (needDeleteFlow) {
         std::cout << "执行流删除（LOGOUT命令）" << std::endl;
         deleteFlow(flow);
         return true;
     }
-    
+
     return true;
 }
 
@@ -489,7 +741,7 @@ void HashFlowTable::outputResults() const {
 std::vector<Flow*> HashFlowTable::getAllFlows() {
     std::vector<Flow*> result;
     std::set<Flow*> uniqueFlows;
-    
+
     // 遍历所有流，确保每个流只添加一次
     for (const auto& pair : flowMap) {
         if (uniqueFlows.find(pair.second) == uniqueFlows.end()) {
@@ -497,32 +749,29 @@ std::vector<Flow*> HashFlowTable::getAllFlows() {
             uniqueFlows.insert(pair.second);
         }
     }
-    
+
     return result;
 }
 
 int HashFlowTable::hashFourTuple(const FourTuple& fourTuple) const {
-    // 计算四元组的哈希值
-    int hash = 0;
-    
-    // 根据IP版本使用不同的哈希计算方法
+    std::size_t hash = 0;
+
+    // 哈希IP地址
     if (fourTuple.srcIPvN == 4) {
-        // IPv4哈希计算
-        hash = 31 * hash + static_cast<int>(fourTuple.srcIPv4);
-        hash = 31 * hash + static_cast<int>(fourTuple.dstIPv4);
+        hash = std::hash<uint32_t>{}(fourTuple.srcIPv4);
+        hash ^= std::hash<uint32_t>{}(fourTuple.dstIPv4) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     } else if (fourTuple.srcIPvN == 6) {
-        // IPv6哈希计算
         for (int i = 0; i < 16; i++) {
-            hash = 31 * hash + static_cast<int>(fourTuple.srcIPv6[i]);
-            hash = 31 * hash + static_cast<int>(fourTuple.dstIPv6[i]);
+            hash ^= std::hash<unsigned char>{}(fourTuple.srcIPv6[i]) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            hash ^= std::hash<unsigned char>{}(fourTuple.dstIPv6[i]) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         }
     }
-    
-    // 加入端口信息
-    hash = 31 * hash + fourTuple.sourcePort;
-    hash = 31 * hash + fourTuple.destPort;
-    
-    return hash;
+
+    // 哈希端口
+    hash ^= std::hash<int>{}(fourTuple.sourcePort) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    hash ^= std::hash<int>{}(fourTuple.destPort) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+
+    return static_cast<int>(hash);
 }
 
 } // namespace flow_table

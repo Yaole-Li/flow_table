@@ -44,7 +44,7 @@ typedef struct {
     unsigned int Volume;   // 容　　限
 } TASK;
 
-// 全局变量（可以在不同函数间共享）
+// 全局变量
 static flow_table::HashFlowTable* flowTable = nullptr;
 
 // ------------------------------ 1. 全局初始化 ------------------------------
@@ -53,6 +53,7 @@ void GlobalInit() {
     std::cout << "执行全局初始化..." << std::endl;
     
     // 暂时想不到要放什么
+    // AC 自动机做匹配的
     
     std::cout << "全局初始化完成" << std::endl;
 }
@@ -230,5 +231,15 @@ int main() {
     // 4. 清理资源（程序结束时执行）
     Remove();
     
+    /*
+    TODO：
+    完善函数，放入数据包插入相关的函数
+    单元测试（两个线程试试？）
+
+    写 s2cParse
+
+    修改编码为 utf-8
+    */
+
     return 0;
 }
