@@ -38,6 +38,11 @@ add_executable(test_imap_parsing
     test/test_imap_parsing.cpp
 )
 
+# 添加parseC2SData函数测试可执行文件
+add_executable(test_parse_c2s_data
+    test/test_parse_c2s_data.cpp
+)
+
 # 链接库
 target_link_libraries(test_circular_string 
     circular_string
@@ -48,10 +53,16 @@ target_link_libraries(test_imap_parsing
     flow_manager
 )
 
+# 链接parseC2SData测试与流管理库
+target_link_libraries(test_parse_c2s_data
+    flow_manager
+)
+
 # 添加测试
 enable_testing()
 add_test(NAME CircularStringTest COMMAND test_circular_string)
 add_test(NAME ImapParsingTest COMMAND test_imap_parsing)
+add_test(NAME ParseC2SDataTest COMMAND test_parse_c2s_data)
 
 # 安装规则
 install(TARGETS circular_string flow_manager
