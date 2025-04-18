@@ -41,6 +41,7 @@ int main() {
         // APPEND命令分两步：先发送命令和字面量大小，然后发送邮件内容
         "B005 APPEND INBOX {310}\r\n",
         // 这里应该有服务器响应 "+ Ready for literal data\r\n"，但客户端不会看到这个响应
+        // FIXME:目前下面的话是没办法解析的,需要等待 s2c 写完后才能解析
         "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message\r\nDate: Mon, 7 Feb 2023 21:52:25 -0800\r\nMessage-Id: <B27397-0100000@example.com>\r\nMIME-Version: 1.0\r\nContent-Type: TEXT/PLAIN; CHARSET=US-ASCII\r\n\r\nThis is a test message.\r\n.\r\n",
         "C004 LOGOUT\r\n",
         "B006 LOGOUT\r\n"

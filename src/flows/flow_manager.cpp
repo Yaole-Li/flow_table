@@ -12,6 +12,8 @@
 #include <vector>
 #include <stdexcept>
 #include <iomanip>
+#include <cstring>
+#include <utility>
 
 namespace flow_table {
 
@@ -30,8 +32,8 @@ Flow::Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple)
 
 Flow::Flow(const FourTuple& c2sTuple) 
     : c2sTuple(c2sTuple),
-      c2sBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
-      s2cBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
+      c2sBuffer(1024 * 1024 * 10), // 默认10MB大小，以后可通过配置文件调整
+      s2cBuffer(1024 * 1024 * 10), // 默认10MB大小，以后可通过配置文件调整
       lastActivityTime(std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch()).count()) { // 初始化最后活动时间为当前时间（毫秒）
     
@@ -232,6 +234,8 @@ bool Flow::parseC2SData() {
     return false; // 没有检测到LOGOUT命令
 }
 
+/*
+不在这里实现了,在s2c_parser.cpp中实现
 bool Flow::parseS2CData() {
     // 解析S2C缓冲区中的数据
     // 1. 查找完整的IMAP响应
@@ -242,6 +246,7 @@ bool Flow::parseS2CData() {
     // TODO: 实现解析逻辑
     return false; // 暂时返回false
 }
+*/
 
 void Flow::outputMessages() const {
     // 输出流中的消息数据
@@ -358,38 +363,62 @@ HashFlowTable::HashFlowTable() : flowTimeoutMilliseconds(120000) {
 }
 
 HashFlowTable::~HashFlowTable() {
-    // 释放所有流对象
-    // 使用getAllFlows获取所有唯一的流对象
-    std::vector<Flow*> allFlows = getAllFlows();
+    // 创建一个集合来跟踪已处理的流指针，避免重复删除
+    std::set<Flow*> processedFlows;
     
-    // 使用deleteFlow方法删除每个流
-    for (Flow* flow : allFlows) {
-        // 不使用时间链表排序的deleteFlow版本
-        // 因为我们将删除所有流，不需要维护链表结构
-        
-        // 查找所有指向这个流的映射
-        std::vector<int> keysToRemove;
-        for (auto& pair : flowMap) {
-            if (pair.second == flow) {
-                keysToRemove.push_back(pair.first);
-            }
+    std::cout << "\n===== 析构函数开始执行 =====" << std::endl;
+    
+    // 收集所有唯一的流对象
+    std::vector<Flow*> uniqueFlows;
+    for (auto& pair : flowMap) {
+        Flow* flow = pair.second;
+        if (flow && processedFlows.find(flow) == processedFlows.end()) {
+            processedFlows.insert(flow);
+            uniqueFlows.push_back(flow);
         }
+    }
+    
+    std::cout << "准备清理 " << uniqueFlows.size() << " 个流对象" << std::endl;
+    
+    // 先清空映射，防止后续操作引用已删除的对象
+    flowMap.clear();
+    timeOrderedFlows.clear();
+    
+    // 清空时间桶
+    timeBuckets.clear();
+    
+    // 删除所有流对象
+    int flowCount = 0;
+    for (Flow* flow : uniqueFlows) {
+        flowCount++;
+        std::cout << "正在清理流 #" << flowCount << ": ";
         
-        // 从映射中删除所有引用
-        for (int key : keysToRemove) {
-            flowMap.erase(key);
+        // 打印四元组信息
+        /*
+        const FourTuple& tuple = flow->getC2STuple();
+        std::cout << "四元组信息: ";
+        if (tuple.srcIPvN == 4) {
+            struct in_addr addr;
+            addr.s_addr = htonl(tuple.srcIPv4);
+            std::cout << inet_ntoa(addr) << ":" << tuple.sourcePort << " -> ";
+            
+            addr.s_addr = htonl(tuple.dstIPv4);
+            std::cout << inet_ntoa(addr) << ":" << tuple.destPort;
+        } else {
+            std::cout << "[IPv6地址]:" << tuple.sourcePort << " -> [IPv6地址]:" << tuple.destPort;
         }
+        std::cout << std::endl;
+        */
         
-        // 调用流的清理方法
+        std::cout << "  - 调用流的cleanup()方法" << std::endl;
         flow->cleanup();
         
-        // 删除流对象
+        std::cout << "  - 删除流对象" << std::endl;
         delete flow;
     }
     
-    // 清空所有集合
-    flowMap.clear();
-    timeOrderedFlows.clear();
+    std::cout << "所有流已清理完毕" << std::endl;
+    std::cout << "===== 析构函数执行完成 =====" << std::endl;
 }
 
 void HashFlowTable::setFlowTimeout(int64_t milliseconds) {
@@ -535,14 +564,14 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     // 计算四元组的哈希值
     int hash = hashFourTuple(fourTuple);
     
-    // 使用equal_range高效查找特定哈希值下的所有流
+    // 查找是否已存在对应的流
     auto range = flowMap.equal_range(hash);
     for (auto it = range.first; it != range.second; ++it) {
         Flow* flow = it->second;
-        if (flow->getC2STuple() == fourTuple) {
-            // 找到了完全匹配四元组的流
+        if (flow && flow->getC2STuple() == fourTuple) {
+            // 找到匹配的流，更新其最后活动时间
             flow->updateLastActivityTime();
-            // 更新流在时间排序链表中的位置
+            // 更新流在时间链表中的位置
             updateFlowPosition(flow);
             return flow;
         }
@@ -555,13 +584,13 @@ Flow* HashFlowTable::getOrCreateFlow(const FourTuple& fourTuple) {
     Flow* newFlow = new Flow(fourTuple);
     
     // 存储流，直接使用原始哈希值
-    flowMap.insert(std::make_pair(hash, newFlow));
+    flowMap.insert(std::pair<int, Flow*>(hash, newFlow));
     
     // 将新流添加到时间排序的链表中
     addToTimeOrderedList(newFlow);
-
-    // 检查并清理超时的流
-    checkAndCleanupTimeoutFlows();
+    
+    // 注释掉这行代码，避免递归调用和多线程冲突
+    // checkAndCleanupTimeoutFlows();
     
     return newFlow;
 }
