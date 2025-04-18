@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <cstring>
 #include <utility>
+#include <sstream>
 
 namespace flow_table {
 
@@ -277,7 +278,148 @@ void Flow::outputMessages() const {
     }
     
     // 2. 输出S2C方向的消息
-    // TODO: 实现S2C消息输出逻辑
+    std::cout << "\n===== S2C 方向消息 (" << s2cMessages.size() << " 条) =====" << std::endl;
+    for (size_t i = 0; i < s2cMessages.size(); ++i) {
+        const Message& msg = s2cMessages[i];
+        std::cout << "\n[" << i + 1 << "] ";
+        
+        // 输出标签（如果有）
+        if (!msg.tag.empty()) {
+            std::cout << "标签: " << msg.tag << ", ";
+        }
+        
+        // 输出命令（如果有）
+        if (!msg.command.empty()) {
+            std::cout << "命令: " << msg.command;
+        }
+        
+        // 输出参数
+        if (!msg.args.empty()) {
+            std::cout << ", 参数: ";
+            for (size_t j = 0; j < msg.args.size(); ++j) {
+                std::cout << msg.args[j];
+                if (j < msg.args.size() - 1) {
+                    std::cout << ", ";
+                }
+            }
+        }
+        
+        std::cout << std::endl;
+        
+        // 输出邮件信息（如果有）
+        if (!msg.fetch.empty()) {
+            std::cout << "  └─ 包含 " << msg.fetch.size() << " 封邮件" << std::endl;
+            
+            // 详细输出每封邮件的信息
+            for (size_t j = 0; j < msg.fetch.size(); ++j) {
+                const Email& email = msg.fetch[j];
+                std::cout << "     ┌─ 邮件 #" << j + 1 << std::endl;
+                
+                // 输出基本信息
+                if (email.sequence_number > 0) {
+                    std::cout << "     │  序列号: " << email.sequence_number << std::endl;
+                }
+                if (email.uid > 0) {
+                    std::cout << "     │  UID: " << email.uid << std::endl;
+                }
+                if (email.rfc822_size > 0) {
+                    std::cout << "     │  大小: " << email.rfc822_size << " 字节" << std::endl;
+                }
+                if (!email.flags.empty()) {
+                    std::cout << "     │  标志: " << email.flags << std::endl;
+                }
+                if (!email.internaldate.empty()) {
+                    std::cout << "     │  内部日期: " << email.internaldate << std::endl;
+                }
+                
+                // 输出头部信息
+                std::cout << "     │" << std::endl;
+                std::cout << "     ├─ 邮件头部" << std::endl;
+                
+                if (!email.body.header.from.empty()) {
+                    std::cout << "     │  发件人: " << email.body.header.from << std::endl;
+                }
+                
+                if (!email.body.header.to.empty()) {
+                    std::cout << "     │  收件人: ";
+                    for (size_t k = 0; k < email.body.header.to.size(); ++k) {
+                        std::cout << email.body.header.to[k];
+                        if (k < email.body.header.to.size() - 1) {
+                            std::cout << ", ";
+                        }
+                    }
+                    std::cout << std::endl;
+                }
+                
+                if (!email.body.header.cc.empty()) {
+                    std::cout << "     │  抄送: ";
+                    for (size_t k = 0; k < email.body.header.cc.size(); ++k) {
+                        std::cout << email.body.header.cc[k];
+                        if (k < email.body.header.cc.size() - 1) {
+                            std::cout << ", ";
+                        }
+                    }
+                    std::cout << std::endl;
+                }
+                
+                if (!email.body.header.subject.empty()) {
+                    std::cout << "     │  主题: ";
+                    for (size_t k = 0; k < email.body.header.subject.size(); ++k) {
+                        std::cout << email.body.header.subject[k];
+                        if (k < email.body.header.subject.size() - 1) {
+                            std::cout << " ";
+                        }
+                    }
+                    std::cout << std::endl;
+                }
+                
+                if (!email.body.header.date.empty()) {
+                    std::cout << "     │  日期: " << email.body.header.date << std::endl;
+                }
+                
+                if (!email.body.header.message_id.empty()) {
+                    std::cout << "     │  消息ID: " << email.body.header.message_id[0] << std::endl;
+                }
+                
+                // 输出正文信息
+                if (!email.body.text.empty()) {
+                    std::cout << "     │" << std::endl;
+                    std::cout << "     ├─ 邮件正文" << std::endl;
+                    
+                    // 将正文按行分割并添加缩进
+                    std::istringstream iss(email.body.text);
+                    std::string line;
+                    bool firstLine = true;
+                    while (std::getline(iss, line)) {
+                        if (line.empty()) continue;
+                        
+                        if (firstLine) {
+                            std::cout << "     │  " << line << std::endl;
+                            firstLine = false;
+                        } else {
+                            std::cout << "     │  " << line << std::endl;
+                        }
+                    }
+                }
+                
+                // 输出其他信息
+                if (!email.envelope.empty() || !email.bodystructure.empty()) {
+                    std::cout << "     │" << std::endl;
+                    std::cout << "     ├─ 其他信息" << std::endl;
+                    
+                    if (!email.envelope.empty()) {
+                        std::cout << "     │  信封: " << email.envelope << std::endl;
+                    }
+                    
+                    if (!email.bodystructure.empty()) {
+                        std::cout << "     │  正文结构: " << email.bodystructure << std::endl;
+                    }
+                }
+                
+                std::cout << "     └────────────────────────────────────" << std::endl;
+            }
+        }
+    }
 }
 
 void Flow::cleanup() {

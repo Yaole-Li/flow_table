@@ -142,22 +142,23 @@ public:
     }
     void queryword(std::string str)
     {
+        // std::cout << "开始匹配" << str << std::endl;
         auto node =root;
         std::vector<std::string>words;
         spliteWord(str,words);
         int i =0;
-        while(i<words.size()){
+        while(i<words.size()) {
             std::string word = words[i];
              bool matchFound = true;
-            for(int j=0;j<word.size();j++){
+            for(int j=0;j<word.size();j++) {
                 unsigned char byte = word[j];
-                while(node!=root&&!node->children.count(byte)){
+                while(node!=root&&!node->children.count(byte)) {
                     node=node->fail;
                 }
-                if(node->children.count(byte)){
+                if(node->children.count(byte)) {
                     node = node->children[byte];     
                 }
-                else{
+                else {
                     //这个字没有匹配成功
                     matchFound = false;
                     break; 
@@ -198,10 +199,10 @@ int main()
     if(content.empty()){
         return 1;
     }
-    // std::string str = "woshi你好哈哈来你好我是大强asdkfjalsdfjlajdf安科技发达卢卡斯的积分卡萨丁积分卡地方";
+    std::string str = "woshi你好哈哈来你好我是大强asdkfjalsdfjlajdf安科技发达卢卡斯的积分卡萨丁积分卡地方";
     // // 获取起始时间
     auto start = std::chrono::high_resolution_clock::now();
-    ac.queryword(content);
+    ac.queryword(str);
     auto end = std::chrono::high_resolution_clock::now();
     // 计算持续的时间，以毫秒为单位
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);

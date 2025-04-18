@@ -24,7 +24,7 @@ int main() {
     AhoCorasick ac;
 
     // 2. 读取敏感词库并构建Trie树
-    std::ifstream dictFile("F:/c++/.vscode/auto_AC/file/sensitive.txt");
+    std::ifstream dictFile("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/sensitive.txt");
     if (!dictFile) {
         std::cerr << "打开文件失败" << std::endl;
         return 1;
@@ -42,7 +42,7 @@ int main() {
     dictFile.close();
 
     // 3. 读取邮件内容
-    std::string content = readFileToUtf8("F:/c++/.vscode/auto_AC/file/input.txt");
+    std::string content = readFileToUtf8("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/input.txt");
     if (content.empty()) {
         return 1;
     }
@@ -54,7 +54,7 @@ int main() {
     ac.queryWord(content);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "uuu " << duration.count() << " 毫秒" << std::endl;
+    std::cout << "耗时 " << duration.count() << " 毫秒" << std::endl;
 
     return 0;
 }
