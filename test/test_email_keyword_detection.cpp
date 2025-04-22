@@ -2,12 +2,20 @@
 #include <string>
 #include <cstdlib>
 #include <unistd.h>
+#include "../include/config/config_parser.h"
 
 int main() {
     std::cout << "===== 开始邮件内容解析和关键词检测集成测试 =====" << std::endl;
     
+    // 从配置文件读取参数
+    flow_table::ConfigParser config;
+    if (!config.loadFromFile("config.ini")) {
+        std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+    }
+    
     // 邮件内容文件路径
-    std::string emailContentPath = "/Users/liyaole/Documents/works/c_work/imap_works/flow_table/test/parsed_email_content.txt";
+    std::string emailContentPath = config.getString("Paths.test_email_content", "test/parsed_email_content.txt");
+    emailContentPath = "/Users/liyaole/Documents/works/c_work/imap_works/flow_table/" + emailContentPath;
     
     // 1. 运行邮件解析程序，解析邮件并保存内容到文件
     std::cout << "\n第一步：运行邮件解析程序..." << std::endl;

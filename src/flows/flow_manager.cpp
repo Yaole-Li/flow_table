@@ -1,4 +1,3 @@
-#include "../../include/flows/flow_manager.h"
 #include <iostream>
 #include <arpa/inet.h>
 #include <set>
@@ -7,7 +6,6 @@
 #include <chrono>
 #include <list>
 #include <map>
-#include <iostream>
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -15,8 +13,25 @@
 #include <cstring>
 #include <utility>
 #include <sstream>
+#include "../../include/config/config_parser.h"
+#include "../../include/flows/flow_manager.h"
 
 namespace flow_table {
+
+// 从配置文件读取缓冲区大小的辅助函数
+size_t getBufferSizeFromConfig(const std::string& key, size_t defaultSize) {
+    static flow_table::ConfigParser config;
+    static bool configLoaded = false;
+    
+    if (!configLoaded) {
+        configLoaded = config.loadFromFile("config.ini");
+        if (!configLoaded) {
+            std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+        }
+    }
+    
+    return config.getInt64(key, defaultSize);
+}
 
 //-------------------- Flow 类实现 --------------------
 
@@ -33,8 +48,8 @@ Flow::Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple)
 
 Flow::Flow(const FourTuple& c2sTuple) 
     : c2sTuple(c2sTuple),
-      c2sBuffer(1024 * 1024 * 10), // 默认10MB大小，以后可通过配置文件调整
-      s2cBuffer(1024 * 1024 * 10), // 默认10MB大小，以后可通过配置文件调整
+      c2sBuffer(getBufferSizeFromConfig("Buffer.c2s_buffer_size", 10 * 1024 * 1024)), // 从配置文件读取C2S缓冲区大小
+      s2cBuffer(getBufferSizeFromConfig("Buffer.s2c_buffer_size", 10 * 1024 * 1024)), // 从配置文件读取S2C缓冲区大小
       lastActivityTime(std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch()).count()) { // 初始化最后活动时间为当前时间（毫秒）
     

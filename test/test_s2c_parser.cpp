@@ -11,6 +11,7 @@
 #include "../include/tools/CircularString.h"
 #include "../include/tools/types.h"
 #include "../include/tools/s2ctools.h"
+#include "../include/config/config_parser.h"  // 添加配置文件解析器支持
 
 using namespace flow_table;
 
@@ -449,8 +450,17 @@ void testCompleteImapSession() {
     // 获取捕获的输出内容作为解析后的邮件内容
     std::string parsedContent = outputCapture.str();
     
+    // 从配置文件读取保存路径
+    ConfigParser config;
+    if (!config.loadFromFile("config.ini")) {
+        std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+    }
+    
+    // 获取邮件内容保存路径
+    std::string emailContentPathRelative = config.getString("Paths.test_email_content", "test/parsed_email_content.txt");
+    std::string parsedFileName = "/Users/liyaole/Documents/works/c_work/imap_works/flow_table/" + emailContentPathRelative;
+    
     // 保存解析后的邮件内容到文件
-    std::string parsedFileName = "/Users/liyaole/Documents/works/c_work/imap_works/flow_table/test/parsed_email_content.txt";
     saveEmailContent(parsedContent, parsedFileName);
     std::cout << "\n已将解析后的邮件内容保存到: " << parsedFileName << " 供关键词检测使用" << std::endl;
 }
