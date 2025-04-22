@@ -8,12 +8,12 @@
 
 // Trie 节点结构
 struct TrieNode {
-    std::map<std::string, TrieNode*> children; // 子节点映射，按UTF-8字符为单位
+    std::map<unsigned char, TrieNode*> children; // 子节点映射
     TrieNode* fail;                              // 失配指针
     bool matched;                                // 是否匹配终止
-    std::vector<std::string> words;              // 存储敏感词（若为终止节点）
+    std::string words;                           // 存储敏感词（若为终止节点）
 
-    TrieNode() : fail(nullptr), matched(false), words() {}
+    TrieNode() : fail(nullptr), matched(false), words("") {}
 };
 
 // Aho-Corasick 自动机类
@@ -29,9 +29,8 @@ public:
     void buildFailPointer();
 
     // 查询敏感词
-    void queryWord(const std::string& str);
+    void queryWord( std::string str);
 
-private:
     TrieNode* root;
 
     // 释放 Trie 树内存

@@ -10,6 +10,11 @@
 
 using namespace flow_table;
 
+// 用于计算IMAP响应中文字量(literal)的准确字节数
+size_t calculateLiteralSize(const std::string& content) {
+    return content.length();
+}
+
 // 创建一个Flow对象用于测试
 Flow* createTestFlow() {
     // 创建一个四元组，模拟客户端到服务器的连接
@@ -249,25 +254,93 @@ void testCompleteImapSession() {
     // 处理C2S数据包 - FETCH命令
     flowTable.processPacket(c2sPacket3);
     
-    // 创建服务器到客户端的响应数据包 - FETCH响应
+    // 创建服务器到客户端的响应数据包 - FETCH响应（前两封邮件）
     InputPacket s2cPacket3;
     s2cPacket3.type = "S2C";
-    s2cPacket3.payload = "* 1 FETCH (BODY[HEADER] {155}\r\n"
-                         "From: sender@example.com\r\n"
-                         "To: recipient@example.com\r\n"
-                         "Subject: Test Email\r\n"
-                         "Date: Fri, 18 Apr 2025 10:00:00 +0800\r\n"
-                         "Content-Type: text/plain\r\n"
+    s2cPacket3.payload = "* 1 FETCH (FLAGS (\\Seen) INTERNALDATE \"11-Nov-1999 08:36:54 -0600\" RFC822.SIZE 2059 BODY[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)] {303}\r\n"
+                         "Date: Thu, 11 Nov 1999 08:36:54 -0600\r\n"
+                         "From: \"Uetrecht, Daniel J.\" <uetrecht@umr.edu>\r\n"
+                         "Subject: RE: pipes implementation of bkupexec agent\r\n"
+                         "To: \"Neulinger, Nathan R.\" <nneul@umr.edu>\r\n"
+                         "Message-ID: <9DA8D24B915BD1118911006094516EAF0261940C@umr-mail02>\r\n"
+                         "Content-Type: text/plain;\r\n"
+                         "\tcharset=\"iso-8859-1\"\r\n"
                          "\r\n"
-                         " BODY[TEXT] {44}\r\n"
-                         "这是一封测试邮件的正文内容。\r\n"
-                         "Hello, World!\r\n"
                          ")\r\n"
+                         "* 2 FETCH (FLAGS (\\Seen) INTERNALDATE \"11-Nov-1999 08:42:21 -0600\" RFC822.SIZE 3151 BODY[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)] {303}\r\n"
+                         "Date: Thu, 11 Nov 1999 08:42:20 -0600\r\n"
+                         "From: \"Uetrecht, Daniel J.\" <uetrecht@umr.edu>\r\n"
+                         "Subject: RE: pipes implementation of bkupexec agent\r\n"
+                         "To: \"Neulinger, Nathan R.\" <nneul@umr.edu>\r\n"
+                         "Message-ID: <9DA8D24B915BD1118911006094516EAF0261940D@umr-mail02>\r\n"
+                         "Content-Type: text/plain;\r\n"
+                         "\tcharset=\"iso-8859-1\"\r\n"
+                         "\r\n"
+                         ")\r\n"
+                         "* 3 FETCH (FLAGS (\\Seen))\r\n"
                          "A003 OK FETCH completed\r\n";
     s2cPacket3.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
-    // 处理S2C数据包 - FETCH响应
+    // 处理S2C数据包 - FETCH响应（前两封邮件）
     flowTable.processPacket(s2cPacket3);
+    
+    // 创建新的服务器到客户端的响应数据包 - 中文邮件头部
+    InputPacket s2cPacket4;
+    s2cPacket4.type = "S2C";
+    
+    // 定义中文邮件头部内容
+    std::string headerContent = 
+        "Date: Mon, 21 Apr 2025 12:30:00 +0800\r\n"
+        "From: \"小明\" <xiaoming@example.com>\r\n"
+        "Subject: 测试邮件\r\n"
+        "To: \"张三\" <zhangsan@example.com>\r\n"
+        "Cc: \"王五\" <wangwu@example.com>\r\n"
+        "Message-ID: <20250421123000.GA23456@example.com>\r\n"
+        "Content-Type: text/plain;\r\n"
+        "\tcharset=\"utf-8\"\r\n"
+        "\r\n";
+    
+    // 计算头部内容的字节数
+    size_t headerSize = calculateLiteralSize(headerContent);
+    
+    // 构建头部FETCH响应
+    s2cPacket4.payload = "* 4 FETCH (FLAGS (\\Seen) INTERNALDATE \"21-Apr-2025 12:30:00 +0800\" "
+                         "RFC822.SIZE 2288 "
+                         "BODY[HEADER] {" + std::to_string(headerSize) + "}\r\n" +
+                         headerContent +
+                         ")\r\n";
+    s2cPacket4.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
+    
+    // 处理S2C数据包 - 中文邮件头部
+    flowTable.processPacket(s2cPacket4);
+    
+    // 创建新的服务器到客户端的响应数据包 - 中文邮件正文
+    InputPacket s2cPacket5;
+    s2cPacket5.type = "S2C";
+    
+    // 定义中文邮件正文内容
+    std::string bodyContent = 
+        "尊敬的张三先生：\r\n"
+        "\r\n"
+        "您好！这是一封测试邮件，用于测试IMAP协议的中文邮件解析功能。\r\n"
+        "\r\n"
+        "祝好！\r\n"
+        "李小明\r\n"
+        "邮件技术部\r\n"
+        "2025年4月21日\r\n";
+    
+    // 计算正文内容的字节数
+    size_t bodySize = calculateLiteralSize(bodyContent);
+    
+    // 构建正文FETCH响应
+    s2cPacket5.payload = "* 4 FETCH (BODY[TEXT] {" + std::to_string(bodySize) + "}\r\n" +
+                         bodyContent +
+                         ")\r\n" +
+                         "A004 OK FETCH completed\r\n";
+    s2cPacket5.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
+    
+    // 处理S2C数据包 - 中文邮件正文
+    flowTable.processPacket(s2cPacket5);
     
     // 输出所有流的处理结果
     std::cout << "\n===== 解析结果输出 =====" << std::endl;

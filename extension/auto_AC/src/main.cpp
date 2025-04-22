@@ -11,7 +11,7 @@ std::string readFileToUtf8(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file) {
         std::cerr << "打开文件失败 " << filepath << std::endl;
-        return 0;
+        return "";
     }
     std::stringstream ss;
     ss<<file.rdbuf();
@@ -24,37 +24,52 @@ int main() {
     AhoCorasick ac;
 
     // 2. 读取敏感词库并构建Trie树
+    // std::ifstream dictFile("F:/c++/.vscode/auto_AC/file/sensitive.txt");
     std::ifstream dictFile("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/sensitive.txt");
-    if (!dictFile) {
+    if (!dictFile.is_open()) {
         std::cerr << "打开文件失败" << std::endl;
         return 1;
     }
     std::string line;
-    while (std::getline(dictFile, line)) {
-        if (!line.empty()) {
-            ac.buildTrie(line);
+    // while (std::getline(dictFile, line)) {
+    //     if (!line.empty()) {
+    //         //std::cout << line << std::endl;
+    //         ac.buildTrie(line);
+    //     }
+    // }
+    // 修改敏感词读取逻辑，去除CR字符
+while (std::getline(dictFile, line)) {
+    if (!line.empty()) {
+        // 处理CRLF换行符
+        if (line.back() == '\r') {
+            line.pop_back();
         }
+        
+        ac.buildTrie(line);
     }
+}
     dictFile.close();
     std::cout << "Trie树构建完成" << std::endl;
     ac.buildFailPointer();
     std::cout<<"失败指针构建完成"<<std::endl;
-    dictFile.close();
 
-    // 3. 读取邮件内容
-    std::string content = readFileToUtf8("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/input.txt");
+
+   // 3. 读取邮件内容
+   std::string content = readFileToUtf8("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/input.txt");
+    std::cout<<"内容"<<content<<std::endl;
     if (content.empty()) {
         return 1;
     }
     // Base64 base64;
-    // std::string content = base64.Decode(encodedContent.c_str(), encodedContent.size());
+    //std::string content = "woshi你好哈哈来你好我是大强asdkfjalsdfjlajdf安科技发达卢卡斯的积分卡萨丁积分卡地方";
 
     // 4. 执行敏感词查询
     auto start = std::chrono::high_resolution_clock::now();
     ac.queryWord(content);
+    //std::cout<<content;
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "耗时 " << duration.count() << " 毫秒" << std::endl;
+    std::cout << "消耗" << duration.count() << " 毫秒" << std::endl;
 
     return 0;
 }

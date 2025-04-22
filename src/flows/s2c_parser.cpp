@@ -41,7 +41,7 @@ bool Flow::parseS2CData() {
                 currentChar = s2cBuffer.at(index++);
                 // 删除空白符（空格和水平制表符）,且至少得有一个空白符
                 if (currentChar != ' ' && currentChar != 9) {
-                    throw std::runtime_error("没有找到空白符");
+                    throw std::runtime_error("*后面没有找到空白符");
                     continue;
                 }
                 do {
@@ -86,7 +86,7 @@ bool Flow::parseS2CData() {
                 }
                 // 删除空白符（空格和水平制表符）,且至少得有一个空白符
                 if (currentChar != ' ' && currentChar != 9) {
-                    throw std::runtime_error("没有找到空白符");
+                    throw std::runtime_error("FETCH 后面没有找到空白符");
                     continue;
                 }
                 do {
@@ -155,7 +155,7 @@ bool Flow::parseS2CData() {
                     }
                     // 删除空白符（空格和水平制表符）,且至少得有一个空白符
                     if (currentChar != ' ' && currentChar != 9) {
-                        throw std::runtime_error("没有找到空白符");
+                        throw std::runtime_error("键的后面没有找到空白符");
                         continue;
                     }
                     do {
