@@ -89,6 +89,17 @@ add_executable(test_s2c_parser
     test/test_s2c_parser.cpp
 )
 
+# 添加邮件关键词检测测试可执行文件
+add_executable(test_email_keyword_detection
+    test/test_email_keyword_detection.cpp
+)
+
+# 添加关键词检测器可执行文件
+add_executable(keyword_detector
+    extension/auto_AC/src/main.cpp
+    extension/auto_AC/src/AhoCorasick.cpp
+)
+
 # 链接库
 target_link_libraries(test_circular_string 
     circular_string
@@ -121,6 +132,18 @@ target_link_libraries(test_s2c_parser
     ${ICONV_LIBRARY}
 )
 
+# 链接邮件关键词检测测试与流管理库
+target_link_libraries(test_email_keyword_detection
+    flow_manager
+    ${ICONV_LIBRARY}
+)
+
+# 链接关键词检测器与流管理库
+target_link_libraries(keyword_detector
+    flow_manager
+    ${ICONV_LIBRARY}
+)
+
 # 添加测试
 enable_testing()
 add_test(NAME CircularStringTest COMMAND test_circular_string)
@@ -128,6 +151,7 @@ add_test(NAME ImapParsingTest COMMAND test_imap_parsing)
 add_test(NAME ParseC2SDataTest COMMAND test_parse_c2s_data)
 add_test(NAME ImapPerformanceTest COMMAND test_imap_performance)
 add_test(NAME S2CParserTest COMMAND test_s2c_parser)
+add_test(NAME EmailKeywordDetectionTest COMMAND test_email_keyword_detection)
 
 # 安装规则
 install(TARGETS circular_string flow_manager
