@@ -1,9 +1,15 @@
-cmake_minimum_required(VERSION 3.10)
-project(flow_table VERSION 1.0)
+cmake_minimum_required(VERSION 2.8.12)
+project(flow_table)
 
-# 设置C++标准
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# 设置C++标准 (CMake 2.8.12兼容方式)
+if(CMAKE_VERSION VERSION_LESS "3.1")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  endif()
+else()
+  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif()
 
 # 设置编译选项
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
