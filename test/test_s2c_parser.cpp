@@ -28,6 +28,8 @@
 #include <cstring>
 #include <arpa/inet.h>
 #include <iomanip>
+#include <limits.h>
+#include <unistd.h>
 #include "../include/flows/flow_manager.h"
 #include "../include/tools/CircularString.h"
 #include "../include/tools/types.h"
@@ -35,6 +37,23 @@
 #include "../include/config/config_parser.h"  // 添加配置文件解析器支持
 
 using namespace flow_table;
+
+// 获取项目根目录的工具函数
+std::string getProjectRoot() {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::string currentPath(cwd);
+        // 查找flow_table目录
+        size_t pos = currentPath.find("flow_table");
+        if (pos != std::string::npos) {
+            // 返回到flow_table目录的路径
+            return currentPath.substr(0, pos + 10); // 10是"flow_table"的长度
+        }
+    }
+    // 返回默认路径
+    std::cerr << "警告: 无法确定项目根目录，使用相对路径" << std::endl;
+    return "./";
+}
 
 // 用于计算IMAP响应中文字量(literal)的准确字节数
 size_t calculateLiteralSize(const std::string& content) {
@@ -384,6 +403,9 @@ void testCompleteImapSession() {
     // 测试长邮件解析 - 从input.txt文件读取内容
     std::cout << "\n====== 测试长邮件解析 ======" << std::endl;
     
+    // 获取项目根目录
+    std::string projectRoot = getProjectRoot();
+    
     // 创建新的客户端到服务器的请求数据包 - FETCH命令
     InputPacket c2sPacket4;
     c2sPacket4.type = "C2S";
@@ -406,7 +428,7 @@ void testCompleteImapSession() {
         "\r\n";
     
     // 读取input.txt文件的内容作为长邮件正文
-    std::ifstream inputFile("/Users/liyaole/Documents/works/c_work/imap_works/flow_table/extension/auto_AC/file/input.txt");
+    std::ifstream inputFile(projectRoot + "/extension/auto_AC/file/input.txt");
     std::string longMailBodyContent;
     if (inputFile.is_open()) {
         std::stringstream buffer;
@@ -479,7 +501,7 @@ void testCompleteImapSession() {
     
     // 获取邮件内容保存路径
     std::string emailContentPathRelative = config.getString("Paths.test_email_content", "test/parsed_email_content.txt");
-    std::string parsedFileName = "/Users/liyaole/Documents/works/c_work/imap_works/flow_table/" + emailContentPathRelative;
+    std::string parsedFileName = projectRoot + "/" + emailContentPathRelative;
     
     // 保存解析后的邮件内容到文件
     saveEmailContent(parsedContent, parsedFileName);
