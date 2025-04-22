@@ -1,3 +1,26 @@
+/**
+ * @file test_parse_c2s_data.cpp
+ * @brief IMAP协议客户端到服务器(C2S)解析器测试
+ * 
+ * 本测试文件用于验证IMAP协议中客户端发送到服务器的命令解析功能。
+ * 主要功能：
+ * 1. 测试Flow::parseC2SData()函数对各种IMAP客户端命令的解析能力
+ * 2. 验证以下IMAP命令的解析正确性：
+ *    - LOGIN - 用户登录命令
+ *    - SELECT - 选择邮箱命令
+ *    - FETCH - 获取邮件命令
+ *    - APPEND - 添加邮件命令
+ *    - LOGOUT - 登出命令
+ *    - 其他标准IMAP命令
+ * 3. 测试在不同情况下命令解析的正确性：
+ *    - 分段接收的命令
+ *    - 包含字面量（literal）的命令
+ *    - 特殊字符和格式的命令
+ * 
+ * 与S2C解析器测试不同，该测试重点关注客户端命令的解析，
+ * 是完整IMAP协议解析系统的重要组成部分。
+ */
+
 #include <iostream>
 #include <string>
 #include <cstring>

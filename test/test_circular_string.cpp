@@ -1,3 +1,22 @@
+/**
+ * @file test_circular_string.cpp
+ * @brief 环形字符串类测试
+ * 
+ * 本测试文件用于验证环形字符串(CircularString)类的功能正确性。
+ * 环形字符串是IMAP协议解析的基础数据结构，用于高效处理网络数据流。
+ * 
+ * 主要测试功能：
+ * 1. 基本构造函数测试 - 验证初始化和参数检查
+ * 2. push_back方法测试 - 验证数据添加功能
+ * 3. find_nth方法测试 - 验证字符串查找功能
+ * 4. substring方法测试 - 验证子字符串提取
+ * 5. erase_up_to方法测试 - 验证数据删除功能
+ * 6. 环形覆盖逻辑测试 - 验证当数据超过容量时的覆盖行为
+ * 7. 大规模测试 - 验证在大量数据下的稳定性
+ * 
+ * 该测试使用自定义的TEST_ASSERT宏进行断言检查，确保各项功能符合预期。
+ */
+
 #include "../include/tools/CircularString.h"
 #include <iostream>
 #include <cassert>

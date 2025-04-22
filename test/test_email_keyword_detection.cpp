@@ -1,3 +1,19 @@
+/**
+ * @file test_email_keyword_detection.cpp
+ * @brief 邮件内容解析和关键词检测集成测试
+ * 
+ * 本测试文件用于验证邮件内容解析和关键词检测的完整工作流程。
+ * 主要功能：
+ * 1. 运行邮件解析程序(test_s2c_parser)，从IMAP协议响应中提取邮件内容并保存到文件
+ * 2. 运行关键词检测程序(keyword_detector)，使用AC自动机算法在邮件内容中检测敏感词
+ * 3. 验证整个处理流程的完整性和正确性
+ * 
+ * 使用配置文件(config.ini)获取以下参数：
+ * - 解析后的邮件内容保存路径
+ * - 敏感词典文件路径
+ * - 测试用长文本输入文件路径
+ */
+
 #include <iostream>
 #include <string>
 #include <cstdlib>
