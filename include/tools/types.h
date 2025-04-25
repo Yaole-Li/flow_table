@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 /**
  * @brief 消息结构体，表示IMAP命令或响应

@@ -1,0 +1,6 @@
+a1 login 1094825151@qq.com mlqecbulvgjjxhdf
+a2 SELECT "INBOX"
+a3 FETCH 1:10 (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])
+a4 fetch 6 body.peek[]
+a5 fetch 7 body.peek[]
+a6 logout

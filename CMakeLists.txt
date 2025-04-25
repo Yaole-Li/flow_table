@@ -95,6 +95,11 @@ add_executable(test_s2c_parser
     test/test_s2c_parser.cpp
 )
 
+# 添加C2S解析器测试可执行文件
+add_executable(test_c2s_parser
+    test/test_c2s_parser.cpp
+)
+
 # 添加邮件关键词检测测试可执行文件
 add_executable(test_email_keyword_detection
     test/test_email_keyword_detection.cpp
@@ -138,6 +143,12 @@ target_link_libraries(test_s2c_parser
     ${ICONV_LIBRARY}
 )
 
+# 链接C2S解析器测试与流管理库
+target_link_libraries(test_c2s_parser
+    flow_manager
+    ${ICONV_LIBRARY}
+)
+
 # 链接邮件关键词检测测试与流管理库
 target_link_libraries(test_email_keyword_detection
     flow_manager
@@ -157,6 +168,7 @@ add_test(NAME ImapParsingTest COMMAND test_imap_parsing)
 add_test(NAME ParseC2SDataTest COMMAND test_parse_c2s_data)
 add_test(NAME ImapPerformanceTest COMMAND test_imap_performance)
 add_test(NAME S2CParserTest COMMAND test_s2c_parser)
+add_test(NAME C2SParserTest COMMAND test_c2s_parser)
 add_test(NAME EmailKeywordDetectionTest COMMAND test_email_keyword_detection)
 
 # 安装规则

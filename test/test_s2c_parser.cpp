@@ -248,7 +248,7 @@ void testS2CParser() {
 
 // 测试完整的IMAP会话
 void testCompleteImapSession() {
-    std::cout << "\n====== 测试FETCH命令响应解析 ======" << std::endl;
+    std::cout << "\n====== 测试完整IMAP会话 ======" << std::endl;
     
     // 创建哈希流表
     HashFlowTable flowTable;
@@ -256,14 +256,14 @@ void testCompleteImapSession() {
     // 创建客户端到服务器的数据包 - 先发送LOGIN命令
     InputPacket c2sPacket1;
     c2sPacket1.type = "C2S";
-    c2sPacket1.payload = "A001 LOGIN user password\r\n";
+    c2sPacket1.payload = "a1 login 1094825151@qq.com mlqecbulvgjjxhdf\r\n";
     
     // 设置四元组
     c2sPacket1.fourTuple.srcIPvN = 4;
     c2sPacket1.fourTuple.srcIPv4 = inet_addr("192.168.1.100");
     c2sPacket1.fourTuple.sourcePort = 12345;
     c2sPacket1.fourTuple.dstIPvN = 4;
-    c2sPacket1.fourTuple.dstIPv4 = inet_addr("192.168.1.200");
+    c2sPacket1.fourTuple.dstIPv4 = inet_addr("10.0.0.1");
     c2sPacket1.fourTuple.destPort = 143;
     
     // 处理C2S数据包 - LOGIN命令
@@ -272,11 +272,12 @@ void testCompleteImapSession() {
     // 创建服务器到客户端的响应数据包 - LOGIN响应
     InputPacket s2cPacket1;
     s2cPacket1.type = "S2C";
-    s2cPacket1.payload = "* OK IMAP server ready\r\nA001 OK LOGIN completed\r\n";
+    s2cPacket1.payload = "* OK [CAPABILITY IMAP4 IMAP4rev1 ID AUTH=PLAIN AUTH=LOGIN AUTH=XOAUTH2 NAMESPACE] QQMail XMIMAP4Server ready\r\n"
+                         "a1 OK Success login ok\r\n";
     
     // 设置四元组（注意源和目标交换）
     s2cPacket1.fourTuple.srcIPvN = 4;
-    s2cPacket1.fourTuple.srcIPv4 = inet_addr("192.168.1.200");
+    s2cPacket1.fourTuple.srcIPv4 = inet_addr("10.0.0.1");
     s2cPacket1.fourTuple.sourcePort = 143;
     s2cPacket1.fourTuple.dstIPvN = 4;
     s2cPacket1.fourTuple.dstIPv4 = inet_addr("192.168.1.100");
@@ -288,7 +289,7 @@ void testCompleteImapSession() {
     // 创建客户端到服务器的数据包 - 发送SELECT命令
     InputPacket c2sPacket2;
     c2sPacket2.type = "C2S";
-    c2sPacket2.payload = "A002 SELECT INBOX\r\n";
+    c2sPacket2.payload = "a2 SELECT \"INBOX\"\r\n";
     c2sPacket2.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
     
     // 处理C2S数据包 - SELECT命令
@@ -297,187 +298,246 @@ void testCompleteImapSession() {
     // 创建服务器到客户端的响应数据包 - SELECT响应
     InputPacket s2cPacket2;
     s2cPacket2.type = "S2C";
-    s2cPacket2.payload = "* 1 EXISTS\r\n* 1 RECENT\r\n* OK [UNSEEN 1] First unseen.\r\n* OK [UIDVALIDITY 1461167108] UIDs valid\r\nA002 OK [READ-WRITE] SELECT completed\r\n";
+    s2cPacket2.payload = "* 7 EXISTS\r\n"
+                         "* 0 RECENT\r\n"
+                         "* OK [UNSEEN 7]\r\n"
+                         "* OK [UIDVALIDITY 1743484216] UID validity status\r\n"
+                         "* OK [UIDNEXT 34] Predicted next UID\r\n"
+                         "* FLAGS (\\Answered \\Flagged \\Deleted \\Draft \\Seen)\r\n"
+                         "* OK [PERMANENTFLAGS (\\* \\Answered \\Flagged \\Deleted \\Draft \\Seen)] Permanent flags\r\n"
+                         "a2 OK [READ-WRITE] SELECT complete\r\n";
     s2cPacket2.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
     // 处理S2C数据包 - SELECT响应
     flowTable.processPacket(s2cPacket2);
     
-    // 创建客户端到服务器的数据包 - 发送FETCH命令
+    // 创建客户端到服务器的数据包 - 发送FETCH命令(邮件头部)
     InputPacket c2sPacket3;
     c2sPacket3.type = "C2S";
-    c2sPacket3.payload = "A003 FETCH 1 (BODY[HEADER] BODY[TEXT])\r\n";
+    c2sPacket3.payload = "a3 FETCH 1:10 (UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])\r\n";
     c2sPacket3.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
     
     // 处理C2S数据包 - FETCH命令
     flowTable.processPacket(c2sPacket3);
     
-    // 创建服务器到客户端的响应数据包 - FETCH响应（前两封邮件）
+    // 创建服务器到客户端的响应数据包 - FETCH响应（所有邮件的头部）
     InputPacket s2cPacket3;
     s2cPacket3.type = "S2C";
-    s2cPacket3.payload = "* 1 FETCH (FLAGS (\\Seen) INTERNALDATE \"11-Nov-1999 08:36:54 -0600\" RFC822.SIZE 2059 BODY[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)] {303}\r\n"
-                         "Date: Thu, 11 Nov 1999 08:36:54 -0600\r\n"
-                         "From: \"Uetrecht, Daniel J.\" <uetrecht@umr.edu>\r\n"
-                         "Subject: RE: pipes implementation of bkupexec agent\r\n"
-                         "To: \"Neulinger, Nathan R.\" <nneul@umr.edu>\r\n"
-                         "Message-ID: <9DA8D24B915BD1118911006094516EAF0261940C@umr-mail02>\r\n"
-                         "Content-Type: text/plain;\r\n"
-                         "\tcharset=\"iso-8859-1\"\r\n"
-                         "\r\n"
-                         ")\r\n"
-                         "* 2 FETCH (FLAGS (\\Seen) INTERNALDATE \"11-Nov-1999 08:42:21 -0600\" RFC822.SIZE 3151 BODY[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)] {303}\r\n"
-                         "Date: Thu, 11 Nov 1999 08:42:20 -0600\r\n"
-                         "From: \"Uetrecht, Daniel J.\" <uetrecht@umr.edu>\r\n"
-                         "Subject: RE: pipes implementation of bkupexec agent\r\n"
-                         "To: \"Neulinger, Nathan R.\" <nneul@umr.edu>\r\n"
-                         "Message-ID: <9DA8D24B915BD1118911006094516EAF0261940D@umr-mail02>\r\n"
-                         "Content-Type: text/plain;\r\n"
-                         "\tcharset=\"iso-8859-1\"\r\n"
-                         "\r\n"
-                         ")\r\n"
-                         "* 3 FETCH (FLAGS (\\Seen))\r\n"
-                         "A003 OK FETCH completed\r\n";
+    s2cPacket3.payload = 
+        "* 1 FETCH (UID 26 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {114}\r\n"
+        "From: =?utf-8?B?5aeTIOWQjQ==?= <z1459384884@outlook.com>\r\n"
+        "Subject: 11111\r\n"
+        "Date: Tue, 8 Apr 2025 12:53:48 +0000\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 2 FETCH (UID 27 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {114}\r\n"
+        "From: \"z1459384884@outlook.com\" <z1459384884@outlook.com>\r\n"
+        "Subject: 2222\r\n"
+        "Date: Tue, 8 Apr 2025 13:00:40 +0000\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 3 FETCH (UID 28 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {211}\r\n"
+        "From: \"=?gb18030?B?hE0=?=\" <1094825151@qq.com>\r\n"
+        "Subject: =?gb18030?B?16q3oqO6uaSzzMLXwO2089f30rUg1dTM7MP6LVMz?=\r\n"
+        " =?gb18030?B?MjQwNjcwOTgttPPK/b7dyrG0+rXEyv2+3cDE08M=?=\r\n"
+        "Date: Sat, 12 Apr 2025 16:52:10 +0800\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 4 FETCH (UID 29 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {132}\r\n"
+        "From: \"=?gb18030?B?zOyyxQ==?=\" <1459384884@qq.com>\r\n"
+        "Subject:  Vergil,give me the Yamato. \r\n"
+        "Date: Thu, 24 Apr 2025 15:08:59 +0800\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 5 FETCH (UID 30 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {146}\r\n"
+        "From: \"=?gb18030?B?zOyyxQ==?=\" <1459384884@qq.com>\r\n"
+        "Subject: =?gb18030?B?zqy8qrb7o6yw0dHWxKe1trj4ztI=?=\r\n"
+        "Date: Thu, 24 Apr 2025 15:15:48 +0800\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 6 FETCH (UID 31 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {134}\r\n"
+        "From: \"=?gb18030?B?zOyyxQ==?=\" <1459384884@qq.com>\r\n"
+        "Subject: =?gb18030?B?zfvCrsm9xtmyvA==?=\r\n"
+        "Date: Fri, 25 Apr 2025 13:13:48 +0800\r\n"
+        "\r\n"
+        ")\r\n"
+        "* 7 FETCH (UID 33 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {108}\r\n"
+        "From: \"=?gb18030?B?zOyyxQ==?=\" <1459384884@qq.com>\r\n"
+        "Subject: joke\r\n"
+        "Date: Fri, 25 Apr 2025 13:24:19 +0800\r\n"
+        "\r\n"
+        ")\r\n"
+        "a3 OK FETCH Completed\r\n";
     s2cPacket3.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
-    // 处理S2C数据包 - FETCH响应（前两封邮件）
+    // 处理S2C数据包 - FETCH响应（邮件头部）
     flowTable.processPacket(s2cPacket3);
     
-    // 创建新的服务器到客户端的响应数据包 - 中文邮件头部
+    // 创建客户端到服务器的数据包 - 请求中文邮件头部
+    InputPacket c2sPacket4;
+    c2sPacket4.type = "C2S";
+    c2sPacket4.payload = "a4 fetch 6 body.peek[header]\r\n";
+    c2sPacket4.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
+    
+    // 处理C2S数据包 - 请求中文邮件头部
+    flowTable.processPacket(c2sPacket4);
+    
+    // 我们替换原始邮件内容为"望庐山瀑布"的内容
+    std::string chineseEmailHeader = 
+        "X-QQ-FEAT: zaIfg0hwV2qyNXeKamWrfK4JWb7Mc2tY\r\n"
+        "X-QQ-SSF: 0001000000000010000000000000\r\n"
+        "X-QQ-XMRINFO: M8wFrcb6n6Ii4I6kYxweyY8=\r\n"
+        "X-HAS-ATTACH: no\r\n"
+        "X-QQ-BUSINESS-ORIGIN: 2\r\n"
+        "X-Originating-IP: 222.171.77.236\r\n"
+        "X-QQ-STYLE: \r\n"
+        "From: \"李白\" <libai@poetry.com>\r\n"
+        "To: \"杜甫\" <dufu@poetry.com>\r\n"
+        "Subject: 望庐山瀑布\r\n"
+        "Mime-Version: 1.0\r\n"
+        "Content-Type: text/plain; charset=\"utf-8\"\r\n"
+        "Content-Transfer-Encoding: 8bit\r\n"
+        "Date: Fri, 25 Apr 2025 13:13:48 +0800\r\n"
+        "X-Priority: 3\r\n"
+        "Message-ID: <tencent_33A1BEE979FC8E51E19BF951B1B16DA33707@qq.com>\r\n"
+        "X-Mailer: QQMail 2.x\r\n";
+    
+    std::string chineseEmailBody = "\r\n日照香炉生紫烟，遥看瀑布挂前川。飞流直下三千尺，疑是银河落九天。\r\n";
+        
+    // 计算邮件头部的长度
+    size_t chineseHeaderSize = chineseEmailHeader.length();
+    
+    // 创建FETCH响应 - 邮件头部
     InputPacket s2cPacket4;
     s2cPacket4.type = "S2C";
-    
-    // 定义中文邮件头部内容
-    std::string headerContent = 
-        "Date: Mon, 21 Apr 2025 12:30:00 +0800\r\n"
-        "From: \"小明\" <xiaoming@example.com>\r\n"
-        "Subject: 测试邮件\r\n"
-        "To: \"张三\" <zhangsan@example.com>\r\n"
-        "Cc: \"王五\" <wangwu@example.com>\r\n"
-        "Message-ID: <20250421123000.GA23456@example.com>\r\n"
-        "Content-Type: text/plain;\r\n"
-        "\tcharset=\"utf-8\"\r\n"
-        "\r\n";
-    
-    // 计算头部内容的字节数
-    size_t headerSize = calculateLiteralSize(headerContent);
-    
-    // 构建头部FETCH响应
-    s2cPacket4.payload = "* 4 FETCH (FLAGS (\\Seen) INTERNALDATE \"21-Apr-2025 12:30:00 +0800\" "
-                         "RFC822.SIZE 2288 "
-                         "BODY[HEADER] {" + std::to_string(headerSize) + "}\r\n" +
-                         headerContent +
-                         ")\r\n";
+    s2cPacket4.payload = "* 6 FETCH (BODY[HEADER] {" + std::to_string(chineseHeaderSize) + "}\r\n" +
+                         chineseEmailHeader +
+                         ")\r\n"
+                         "a4 OK FETCH Completed\r\n";
     s2cPacket4.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
     // 处理S2C数据包 - 中文邮件头部
     flowTable.processPacket(s2cPacket4);
     
-    // 创建新的服务器到客户端的响应数据包 - 中文邮件正文
-    InputPacket s2cPacket5;
-    s2cPacket5.type = "S2C";
+    // 创建客户端到服务器的数据包 - 请求中文邮件正文
+    InputPacket c2sPacket4b;
+    c2sPacket4b.type = "C2S";
+    c2sPacket4b.payload = "a4b fetch 6 body.peek[text]\r\n";
+    c2sPacket4b.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
     
-    // 定义中文邮件正文内容
-    std::string bodyContent = 
-        "尊敬的张三先生：\r\n"
-        "\r\n"
-        "您好！这是一封测试邮件，用于测试IMAP协议的中文邮件解析功能。\r\n"
-        "\r\n"
-        "祝好！\r\n"
-        "李小明\r\n"
-        "邮件技术部\r\n"
-        "2025年4月21日\r\n";
+    // 处理C2S数据包 - 请求中文邮件正文
+    flowTable.processPacket(c2sPacket4b);
     
-    // 计算正文内容的字节数
-    size_t bodySize = calculateLiteralSize(bodyContent);
+    // 计算邮件正文长度
+    size_t chineseBodySize = chineseEmailBody.length();
     
-    // 构建正文FETCH响应
-    s2cPacket5.payload = "* 4 FETCH (BODY[TEXT] {" + std::to_string(bodySize) + "}\r\n" +
-                         bodyContent +
-                         ")\r\n" +
-                         "A004 OK FETCH completed\r\n";
-    s2cPacket5.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
+    // 创建服务器到客户端的响应数据包 - 中文邮件正文
+    InputPacket s2cPacket4b;
+    s2cPacket4b.type = "S2C";
+    s2cPacket4b.payload = "* 6 FETCH (BODY[TEXT] {" + std::to_string(chineseBodySize) + "}\r\n" +
+                         chineseEmailBody +
+                         ")\r\n"
+                         "a4b OK FETCH Completed\r\n";
+    s2cPacket4b.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
     // 处理S2C数据包 - 中文邮件正文
+    flowTable.processPacket(s2cPacket4b);
+    
+    // 创建客户端到服务器的数据包 - 请求英文邮件头部
+    InputPacket c2sPacket5;
+    c2sPacket5.type = "C2S";
+    c2sPacket5.payload = "a5 fetch 7 body.peek[header]\r\n";
+    c2sPacket5.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
+    
+    // 处理C2S数据包 - 请求英文邮件头部
+    flowTable.processPacket(c2sPacket5);
+    
+    // 我们替换原始邮件内容为"joke"的内容
+    std::string englishEmailHeader = 
+        "X-QQ-FEAT: zaIfg0hwV2qyNXeKamWrfK4JWb7Mc2tY\r\n"
+        "X-QQ-SSF: 0001000000000010000000000000\r\n"
+        "X-QQ-XMRINFO: M/715EihBoGSf6IYSX1iLFg=\r\n"
+        "X-HAS-ATTACH: no\r\n"
+        "X-QQ-BUSINESS-ORIGIN: 2\r\n"
+        "X-Originating-IP: 222.171.77.236\r\n"
+        "X-QQ-STYLE: \r\n"
+        "From: \"John\" <john@example.com>\r\n"
+        "To: \"Mary\" <mary@example.com>\r\n"
+        "Subject: joke\r\n"
+        "Mime-Version: 1.0\r\n"
+        "Content-Type: text/plain; charset=\"utf-8\"\r\n"
+        "Content-Transfer-Encoding: 8bit\r\n"
+        "Date: Fri, 25 Apr 2025 13:24:19 +0800\r\n"
+        "X-Priority: 3\r\n"
+        "Message-ID: <tencent_DE625DDBD36FCD7D11F3AE1DDBC2B7F30B08@qq.com>\r\n"
+        "X-Mailer: QQMail 2.x\r\n";
+    
+    std::string englishEmailBody = "\r\nWhy don't skeletons fight each other? They don't have the guts!\r\n";
+    
+    // 计算英文邮件头部的长度
+    size_t englishHeaderSize = englishEmailHeader.length();
+    
+    // 创建FETCH响应 - 英文邮件头部
+    InputPacket s2cPacket5;
+    s2cPacket5.type = "S2C";
+    s2cPacket5.payload = "* 7 FETCH (BODY[HEADER] {" + std::to_string(englishHeaderSize) + "}\r\n" +
+                         englishEmailHeader +
+                         ")\r\n"
+                         "a5 OK FETCH Completed\r\n";
+    s2cPacket5.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
+    
+    // 处理S2C数据包 - 英文邮件头部
     flowTable.processPacket(s2cPacket5);
     
-    // 测试长邮件解析 - 从input.txt文件读取内容
-    std::cout << "\n====== 测试长邮件解析 ======" << std::endl;
+    // 创建客户端到服务器的数据包 - 请求英文邮件正文
+    InputPacket c2sPacket5b;
+    c2sPacket5b.type = "C2S";
+    c2sPacket5b.payload = "a5b fetch 7 body.peek[text]\r\n";
+    c2sPacket5b.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
     
-    // 获取项目根目录
-    std::string projectRoot = getProjectRoot();
+    // 处理C2S数据包 - 请求英文邮件正文
+    flowTable.processPacket(c2sPacket5b);
     
-    // 创建新的客户端到服务器的请求数据包 - FETCH命令
-    InputPacket c2sPacket4;
-    c2sPacket4.type = "C2S";
-    c2sPacket4.payload = "A005 FETCH 5 (BODY[HEADER] BODY[TEXT])\r\n";
-    c2sPacket4.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
+    // 计算英文邮件正文长度
+    size_t englishBodySize = englishEmailBody.length();
     
-    // 处理C2S数据包 - FETCH命令
-    flowTable.processPacket(c2sPacket4);
+    // 创建服务器到客户端的响应数据包 - 英文邮件正文
+    InputPacket s2cPacket5b;
+    s2cPacket5b.type = "S2C";
+    s2cPacket5b.payload = "* 7 FETCH (BODY[TEXT] {" + std::to_string(englishBodySize) + "}\r\n" +
+                         englishEmailBody +
+                         ")\r\n"
+                         "a5b OK FETCH Completed\r\n";
+    s2cPacket5b.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
-    // 定义长邮件头部内容
-    std::string longMailHeaderContent = 
-        "Date: Mon, 22 Apr 2025 14:00:00 +0800\r\n"
-        "From: \"研究团队\" <research@example.com>\r\n"
-        "Subject: 关于社区搜索算法的研究报告\r\n"
-        "To: \"技术部门\" <tech@example.com>\r\n"
-        "Cc: \"管理层\" <management@example.com>\r\n"
-        "Message-ID: <20250422140000.GA12345@example.com>\r\n"
-        "Content-Type: text/plain;\r\n"
-        "\tcharset=\"utf-8\"\r\n"
-        "\r\n";
+    // 处理S2C数据包 - 英文邮件正文
+    flowTable.processPacket(s2cPacket5b);
     
-    // 读取input.txt文件的内容作为长邮件正文
-    std::ifstream inputFile(projectRoot + "/extension/auto_AC/file/input.txt");
-    std::string longMailBodyContent;
-    if (inputFile.is_open()) {
-        std::stringstream buffer;
-        buffer << inputFile.rdbuf();
-        longMailBodyContent = buffer.str();
-        inputFile.close();
-    } else {
-        std::cerr << "无法打开input.txt文件" << std::endl;
-        longMailBodyContent = "无法读取文件内容。这是一个替代的长邮件正文，用于测试解析功能。\r\n";
-    }
+    // 创建客户端到服务器的数据包 - 发送LOGOUT命令
+    InputPacket c2sPacket6;
+    c2sPacket6.type = "C2S";
+    c2sPacket6.payload = "a6 logout\r\n";
+    c2sPacket6.fourTuple = c2sPacket1.fourTuple; // 使用相同的四元组
     
-    // 创建长邮件的头部响应数据包
+    // 处理C2S数据包 - LOGOUT命令
+    flowTable.processPacket(c2sPacket6);
+    
+    // 创建服务器到客户端的响应数据包 - LOGOUT响应
     InputPacket s2cPacket6;
     s2cPacket6.type = "S2C";
-    
-    // 计算头部内容的字节数
-    size_t longHeaderSize = calculateLiteralSize(longMailHeaderContent);
-    
-    // 构建头部FETCH响应
-    s2cPacket6.payload = "* 5 FETCH (FLAGS (\\Seen) INTERNALDATE \"22-Apr-2025 14:00:00 +0800\" "
-                         "RFC822.SIZE 15000 "
-                         "BODY[HEADER] {" + std::to_string(longHeaderSize) + "}\r\n" +
-                         longMailHeaderContent +
-                         ")\r\n";
+    s2cPacket6.payload = "* BYE LOGOUT received\r\n"
+                         "a6 OK LOGOUT Completed\r\n";
     s2cPacket6.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
     
-    // 处理S2C数据包 - 长邮件头部
+    // 处理S2C数据包 - LOGOUT响应
     flowTable.processPacket(s2cPacket6);
-    
-    // 创建长邮件的正文响应数据包
-    InputPacket s2cPacket7;
-    s2cPacket7.type = "S2C";
-    
-    // 计算正文内容的字节数
-    size_t longBodySize = calculateLiteralSize(longMailBodyContent);
-    
-    // 构建正文FETCH响应
-    s2cPacket7.payload = "* 5 FETCH (BODY[TEXT] {" + std::to_string(longBodySize) + "}\r\n" +
-                         longMailBodyContent +
-                         ")\r\n" +
-                         "A005 OK FETCH completed\r\n";
-    s2cPacket7.fourTuple = s2cPacket1.fourTuple; // 使用相同的四元组
-    
-    // 处理S2C数据包 - 长邮件正文
-    flowTable.processPacket(s2cPacket7);
     
     // 输出所有流的处理结果
     std::cout << "\n===== 解析结果输出 =====" << std::endl;
     flowTable.outputResults();
+    
+    // 获取项目根目录
+    std::string projectRoot = getProjectRoot();
     
     // 捕获解析后的邮件内容
     std::ostringstream outputCapture;
