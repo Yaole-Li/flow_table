@@ -13,10 +13,29 @@
 #include <cstring>
 #include <utility>
 #include <sstream>
+#include <unistd.h>
+#include <limits.h>
 #include "../../include/config/config_parser.h"
 #include "../../include/flows/flow_manager.h"
 
 namespace flow_table {
+
+// 获取项目根目录的工具函数
+std::string getProjectRoot() {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::string currentPath(cwd);
+        // 查找flow_table目录
+        size_t pos = currentPath.find("flow_table");
+        if (pos != std::string::npos) {
+            // 返回到flow_table目录的路径
+            return currentPath.substr(0, pos + 10) + "/"; // 10是"flow_table"的长度
+        }
+    }
+    // 返回默认路径
+    std::cerr << "警告: 无法确定项目根目录，使用相对路径" << std::endl;
+    return "./";
+}
 
 // 从配置文件读取缓冲区大小的辅助函数
 size_t getBufferSizeFromConfig(const std::string& key, size_t defaultSize) {
@@ -24,9 +43,11 @@ size_t getBufferSizeFromConfig(const std::string& key, size_t defaultSize) {
     static bool configLoaded = false;
     
     if (!configLoaded) {
-        configLoaded = config.loadFromFile("config.ini");
+        // 使用项目根目录
+        std::string configPath = getProjectRoot() + "config.ini";
+        configLoaded = config.loadFromFile(configPath);
         if (!configLoaded) {
-            std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+            std::cerr << "警告: 无法加载配置文件 " << configPath << "，将使用默认值" << std::endl;
         }
     }
     
@@ -38,8 +59,8 @@ size_t getBufferSizeFromConfig(const std::string& key, size_t defaultSize) {
 Flow::Flow(const FourTuple& c2sTuple, const FourTuple& s2cTuple)
     : c2sTuple(c2sTuple), 
       s2cTuple(s2cTuple),
-      c2sBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
-      s2cBuffer(1024 * 1024), // 默认1MB大小，可通过配置文件调整
+      c2sBuffer(getBufferSizeFromConfig("Buffer.c2s_buffer_size", 10 * 1024 * 1024)), // 从配置文件读取C2S缓冲区大小
+      s2cBuffer(getBufferSizeFromConfig("Buffer.s2c_buffer_size", 10 * 1024 * 1024)), // 从配置文件读取S2C缓冲区大小
       lastActivityTime(std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::system_clock::now().time_since_epoch()).count()) { // 初始化最后活动时间为当前时间（毫秒）
     // 初始化流对象

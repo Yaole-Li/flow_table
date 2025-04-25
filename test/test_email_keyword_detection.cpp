@@ -46,13 +46,23 @@ int main() {
     
     // 从配置文件读取参数
     flow_table::ConfigParser config;
-    if (!config.loadFromFile("config.ini")) {
-        std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+    if (!config.loadFromFile(projectRoot + "config.ini")) {
+        std::cerr << "警告: 无法加载配置文件 " << projectRoot + "config.ini" << "，将使用默认值" << std::endl;
     }
     
     // 邮件内容文件路径
     std::string emailContentPath = config.getString("Paths.test_email_content", "test/parsed_email_content.txt");
-    emailContentPath = projectRoot + "/" + emailContentPath;
+    
+    // 检查是否已经是绝对路径
+    if (emailContentPath.empty()) {
+        emailContentPath = projectRoot + "test/parsed_email_content.txt";
+    } else if (emailContentPath[0] == '/') {
+        // 已经是绝对路径，直接使用
+        // 保持不变
+    } else {
+        // 相对路径，添加项目根目录
+        emailContentPath = projectRoot + emailContentPath;
+    }
     
     // 1. 运行邮件解析程序，解析邮件并保存内容到文件
     std::cout << "\n第一步：运行邮件解析程序..." << std::endl;

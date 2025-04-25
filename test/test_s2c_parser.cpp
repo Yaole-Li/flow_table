@@ -47,7 +47,7 @@ std::string getProjectRoot() {
         size_t pos = currentPath.find("flow_table");
         if (pos != std::string::npos) {
             // 返回到flow_table目录的路径
-            return currentPath.substr(0, pos + 10); // 10是"flow_table"的长度
+            return currentPath.substr(0, pos + 10) + "/"; // 10是"flow_table"的长度
         }
     }
     // 返回默认路径
@@ -495,13 +495,24 @@ void testCompleteImapSession() {
     
     // 从配置文件读取保存路径
     ConfigParser config;
-    if (!config.loadFromFile("config.ini")) {
-        std::cerr << "警告: 无法加载配置文件 config.ini，将使用默认值" << std::endl;
+    if (!config.loadFromFile(getProjectRoot() + "config.ini")) {
+        std::cerr << "警告: 无法加载配置文件 " << getProjectRoot() + "config.ini" << "，将使用默认值" << std::endl;
     }
     
     // 获取邮件内容保存路径
     std::string emailContentPathRelative = config.getString("Paths.test_email_content", "test/parsed_email_content.txt");
-    std::string parsedFileName = projectRoot + "/" + emailContentPathRelative;
+    std::string parsedFileName;
+    
+    // 检查是否已经是绝对路径
+    if (emailContentPathRelative.empty()) {
+        parsedFileName = projectRoot + "test/parsed_email_content.txt";
+    } else if (emailContentPathRelative[0] == '/') {
+        // 已经是绝对路径，直接使用
+        parsedFileName = emailContentPathRelative;
+    } else {
+        // 相对路径，添加项目根目录
+        parsedFileName = projectRoot + emailContentPathRelative;
+    }
     
     // 保存解析后的邮件内容到文件
     saveEmailContent(parsedContent, parsedFileName);
