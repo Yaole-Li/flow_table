@@ -267,41 +267,48 @@ int Filter(TASK *Import, TASK **Export) {
             // 4. 处理数据包
             bool processed = flowTable->processPacket(packet);
             
-            // 5. 输出处理结果
+            // 5. 输出处理结果并进行关键词检测
             if (processed) {
-                // 输出处理结果
+                // 改变思路：截获输出结果并对其进行关键词检测
+                // 重定向cout到字符串流
+                std::stringstream outputStream;
+                std::streambuf* oldCoutStreamBuf = std::cout.rdbuf();
+                std::cout.rdbuf(outputStream.rdbuf());
+                
+                // 输出处理结果到字符串流
                 flowTable->outputResults();
                 
-                // 如果是S2C数据包，执行S2C解析处理后可能会产生邮件内容需要检测
+                // 恢复标准输出
+                std::cout.rdbuf(oldCoutStreamBuf);
+                
+                // 获取捕获的输出内容
+                std::string outputContent = outputStream.str();
+                
+                // 将捕获的输出内容写入到标准输出
+                std::cout << outputContent;
+                
+                // 如果是S2C数据包，分析输出内容中的邮件并进行关键词检测
                 if (!isC2S) {
-                    // 获取所有流，并从中寻找包含FETCH响应的邮件
-                    std::vector<flow_table::Flow*> allFlows = flowTable->getAllFlows();
+                    std::cout << "检测到S2C数据包，准备分析输出内容..." << std::endl;
                     
-                    // 我们不需要遍历每个流，只需要对当前数据包内容进行检测
-                    if (!allFlows.empty()) {
-                        // 每个流处理后会输出消息，这里不需要直接获取S2C消息
-                        // 邮件内容在解析时已经输出，我们可以扫描所有流中的邮件
+                    // 在输出内容中查找并检测邮件内容
+                    if (!outputContent.empty()) {
+                        // 通过输出内容中的邮件标识词来提取邮件
+                        // 例如，输出内容中通常包含"EMAIL:"、"Subject:"、"From:"等标识
                         
-                        // 从已解析的数据中寻找邮件内容 - 这里实际上需要从flow获取S2C消息
-                        // 但由于Flow类没有提供公共的获取S2C消息的方法，我们只能通过输出结果检测
-                        std::cout << "检测到S2C数据包，邮件内容已处理" << std::endl;
+                        std::cout << "对解析后的输出内容进行关键词检测..." << std::endl;
+                        performKeywordDetection(outputContent);
                         
-                        // TODO: 如果要完全访问流中的S2C消息和邮件内容，需要向Flow类添加获取S2C消息的公共方法
-                        // 例如：const std::vector<Message>& getS2CMessages() const;
-                        // 目前，我们只能检测包含了email关键词的文本内容
-                        
-                        // 直接对输入的S2C数据包内容进行检测
-                        std::string contentToCheck = std::string(reinterpret_cast<char*>(Import->Buffer), Import->Length);
-                        if (!contentToCheck.empty()) {
-                            std::cout << "对S2C数据包内容进行关键词检测..." << std::endl;
-                            performKeywordDetection(contentToCheck);
+                        /*
+                        // 同时也对原始S2C数据包进行检测，以防有些内容未被输出
+                        std::string rawContent = std::string(reinterpret_cast<char*>(Import->Buffer), Import->Length);
+                        if (!rawContent.empty()) {
+                            std::cout << "对原始S2C数据包内容进行关键词检测..." << std::endl;
+                            performKeywordDetection(rawContent);
                         }
-                        
-                        // 只处理当前输入数据，跳出循环
-                        break;
+                        */
                     }
                 }
-                
             }
 
             break;
