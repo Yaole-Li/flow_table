@@ -46,8 +46,8 @@ int main() {
     
     // 从配置文件读取参数
     flow_table::ConfigParser config;
-    if (!config.loadFromFile(projectRoot + "config.ini")) {
-        std::cerr << "警告: 无法加载配置文件 " << projectRoot + "config.ini" << "，将使用默认值" << std::endl;
+    if (!config.loadFromFile(projectRoot + "/config.ini")) {
+        std::cerr << "警告: 无法加载配置文件 " << projectRoot + "/config.ini" << "，将使用默认值" << std::endl;
     }
     
     // 邮件内容文件路径

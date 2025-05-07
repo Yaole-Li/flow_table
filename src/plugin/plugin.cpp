@@ -1,53 +1,15 @@
-#include <iostream>
-#include <string>
-#include <cstring>
-#include <arpa/inet.h>
-#include <fstream>
-#include <sstream>
-#include <unistd.h>
-#include <limits.h>
-#include "../include/flows/flow_manager.h"
-#include "../include/tools/CircularString.h"
-#include "../include/tools/types.h"
-#include "../include/config/config_parser.h"
-#include "../extension/auto_AC/include/AhoCorasick.h"
+/**
+ * @file plugin.cpp
+ * @brief IMAP流量分析和关键词检测插件接口实现
+ * 
+ * 实现了plugin.h中声明的四个接口函数：
+ * - GlobalInit：全局初始化
+ * - ThreadInit：线程初始化
+ * - Filter：数据包过滤处理
+ * - Remove：资源清理
+ */
 
-// 通信实体结构体
-typedef struct {
-    char Role;          // 角　　色 C/S
-    unsigned char IPvN; // 版　　本 4/6
-
-    union {
-        unsigned int IPv4;      // IPv4地址
-        unsigned char IPv6[16]; // IPv6地址
-    };
-
-    unsigned short Port; // 端　　口
-} ENTITY;
-
-// 交互任务结构体
-typedef struct {
-    // 指令区
-    union {
-        unsigned char Inform; // 通告指令 0x12=数据传输 0x13=关闭
-        unsigned char Action; // 动作指令 0x22=转发 0x21=知晓
-    };
-
-    unsigned char Option; // 标志选项
-
-    // 标识区
-    unsigned short Thread; // 线程编号
-    unsigned short Number; // 链路标识
-
-    // 通信区
-    ENTITY Source; // 源　　端
-    ENTITY Target; // 宿　　端
-
-    // 承载区
-    unsigned char* Buffer; // 数　　据
-    unsigned int Length;   // 长　　度
-    unsigned int Volume;   // 容　　限
-} TASK;
+#include "../../include/plugin/plugin.h"
 
 // 全局变量
 static flow_table::HashFlowTable* flowTable = nullptr;
@@ -55,9 +17,8 @@ static flow_table::HashFlowTable* flowTable = nullptr;
 static AhoCorasick* acDetector = nullptr;
 static flow_table::ConfigParser* configPtr = nullptr;
 static std::string projectRoot;
-
-// ------------------------------ 1. 全局初始化 ------------------------------
-// 该部分只在程序启动时执行一次
+// 全局配置文件路径
+static std::string configFilePath;
 
 // 获取当前目录的工具函数
 std::string getCurrentDir() {
@@ -138,9 +99,22 @@ bool initKeywordDetector() {
     return true;
 }
 
-// 全局配置文件路径
-std::string configFilePath;
+// 执行关键词检测
+void performKeywordDetection(const std::string& content) {
+    if (!acDetector) {
+        std::cerr << "错误: 关键词检测器未初始化" << std::endl;
+        return;
+    }
+    
+    std::cout << "\n===== 执行关键词检测 =====" << std::endl;
+    std::cout << "内容长度: " << content.length() << " 字节" << std::endl;
+    
+    // 执行检测
+    acDetector->queryWord(content);
+}
 
+// ------------------------------ 1. 全局初始化 ------------------------------
+// 该部分只在程序启动时执行一次
 void GlobalInit() {
     std::cout << "执行全局初始化..." << std::endl;
     
@@ -158,7 +132,7 @@ void GlobalInit() {
     
     if (!configFilePath.empty()) {
         // 使用命令行指定的配置文件
-        std::cout << "尝试加载命令行指定的配置文件: " << configFilePath << std::endl;
+        std::cout << "尝试加载指定的配置文件: " << configFilePath << std::endl;
         configLoaded = configPtr->loadFromFile(configFilePath);
     }
     
@@ -217,21 +191,6 @@ void ThreadInit() {
 
 // ------------------------------ 3. Filter 处理函数 ------------------------------
 // 数据过滤函数，处理每个数据包
-
-// 执行关键词检测
-void performKeywordDetection(const std::string& content) {
-    if (!acDetector) {
-        std::cerr << "错误: 关键词检测器未初始化" << std::endl;
-        return;
-    }
-    
-    std::cout << "\n===== 执行关键词检测 =====" << std::endl;
-    std::cout << "内容长度: " << content.length() << " 字节" << std::endl;
-    
-    // 执行检测
-    acDetector->queryWord(content);
-}
-
 int Filter(TASK *Import, TASK **Export) {
     // 置动作为通告
     *Export = Import;
@@ -318,7 +277,8 @@ int Filter(TASK *Import, TASK **Export) {
                     // 获取所有流，并从中寻找包含FETCH响应的邮件
                     std::vector<flow_table::Flow*> allFlows = flowTable->getAllFlows();
                     
-                    for (const auto& flow : allFlows) {
+                    // 我们不需要遍历每个流，只需要对当前数据包内容进行检测
+                    if (!allFlows.empty()) {
                         // 每个流处理后会输出消息，这里不需要直接获取S2C消息
                         // 邮件内容在解析时已经输出，我们可以扫描所有流中的邮件
                         
@@ -385,105 +345,9 @@ void Remove() {
     std::cout << "清理完成" << std::endl;
 }
 
-// 测试主函数，模拟插件的使用
-int main(int argc, char* argv[]) {
-    // 检查命令行参数
-    if (argc > 1) {
-        // 第一个参数作为配置文件路径
-        configFilePath = argv[1];
-        std::cout << "使用命令行指定的配置文件: " << configFilePath << std::endl;
+// 提供一个函数用于外部设置配置文件路径
+extern "C" void SetConfigFilePath(const char* path) {
+    if (path != nullptr) {
+        configFilePath = path;
     }
-    /*
-    修改了以下问题: 
-    1.不做线程，每次包过来的时候都看下最旧的流是否超时。 
-    2.logout的时候直接清理 
-    3.解决哈希冲突 
-    4.四元组反向 
-    5.输出Message后判断超时，重点是建立一个虚拟链表，按照时间排序(我用了时间桶算法)
-    */
-
-    // 1. 全局初始化（只执行一次）
-    GlobalInit();
-    
-    // 2. 线程初始化（每个线程执行一次）
-    ThreadInit();
-    
-    std::cout << "\n===== 测试 C2S 方向数据包 =====" << std::endl;
-    {
-        // 3.1 创建 C2S 方向的测试数据包
-        TASK task;
-        task.Inform = 0x12;
-        task.Source.Role = 'C';  // 客户端角色
-        task.Source.IPvN = 4;
-        task.Source.IPv4 = 0x01020304; // 1.2.3.4
-        task.Source.Port = 1234;
-        task.Target.Role = 'S';  // 服务器角色
-        task.Target.IPvN = 4;
-        task.Target.IPv4 = 0x05060708; // 5.6.7.8
-        task.Target.Port = 143;  // IMAP标准端口
-        
-        // 创建 C2S 测试数据 - IMAP客户端命令
-        const char* c2sData = "a0004 FETCH 1:13 (FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS (DATE FROM SUBJECT TO CC MESSAGE-ID REFERENCES CONTENT-TYPE IN-REPLY-TO REPLY-TO)])\r\n";
-        size_t dataLen = strlen(c2sData);
-        unsigned char* buffer = new unsigned char[dataLen];
-        memcpy(buffer, c2sData, dataLen);
-        
-        task.Buffer = buffer;
-        task.Length = dataLen;
-        
-        // 处理 C2S 数据包
-        TASK* exportTask = nullptr;
-        std::cout << "处理C2S数据包: " << c2sData << std::endl;
-        Filter(&task, &exportTask);
-        
-        delete[] buffer;
-    }
-    
-    std::cout << "\n===== 测试 S2C 方向数据包 =====" << std::endl;
-    {
-        // 3.2 创建 S2C 方向的测试数据包
-        TASK task;
-        task.Inform = 0x12;
-        task.Source.Role = 'S';  // 服务器角色
-        task.Source.IPvN = 4;
-        task.Source.IPv4 = 0x05060708; // 5.6.7.8
-        task.Source.Port = 143;  // IMAP标准端口
-        task.Target.Role = 'C';  // 客户端角色
-        task.Target.IPvN = 4;
-        task.Target.IPv4 = 0x01020304; // 1.2.3.4
-        task.Target.Port = 1234;
-        
-        // 直接使用test_s2c_parser.cpp中验证过的S2C响应数据
-        const char* s2cData = "* 1 FETCH (UID 26 FLAGS () BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {114}\r\n"
-                              "From: =?utf-8?B?5aeTIOWQjQ==?= <z1459384884@outlook.com>\r\n"
-                              "Subject: 11111\r\n"
-                              "Date: Tue, 8 Apr 2025 12:53:48 +0000\r\n"
-                              "\r\n"
-                              ")\r\n";
-        size_t dataLen = strlen(s2cData);
-        unsigned char* buffer = new unsigned char[dataLen];
-        memcpy(buffer, s2cData, dataLen);
-        
-        task.Buffer = buffer;
-        task.Length = dataLen;
-        
-        // 处理 S2C 数据包
-        TASK* exportTask = nullptr;
-        std::cout << "处理S2C数据包: " << s2cData << std::endl;
-        Filter(&task, &exportTask);
-        
-        delete[] buffer;
-    }
-    
-    // 4. 清理资源（程序结束时执行）
-    Remove();
-    
-    /*
-    TODO：
-    把拿不住的数据软编码，放在配置文件中
-    集成 s2c 功能
-    openssl 库
-    */
-
-    return 0;
 }

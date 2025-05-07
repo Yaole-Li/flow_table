@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
 
     // 3. 读取邮件内容
     std::string content = readFileToUtf8(inputFilePath);
-    // std::cout<<"内容"<<content<<std::endl;
+    std::cout<<"邮件内容: "<<content<<std::endl;
     if (content.empty()) {
         return 1;
     }
@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
     //std::cout<<content;
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << "消耗" << duration.count() << " 毫秒" << std::endl;
+    // std::cout << "消耗" << duration.count() << " 毫秒" << std::endl;
 
     return 0;
 }

@@ -13,8 +13,11 @@ endif()
 
 # 设置编译选项
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -fPIC")
 endif()
+
+# 强制使用PIC编译所有的对象
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # 根据操作系统设置OpenSSL路径
 set(OPENSSL_ROOT_DIR "/usr")
@@ -105,9 +108,26 @@ add_executable(test_email_keyword_detection
     test/test_email_keyword_detection.cpp
 )
 
+# 添加插件测试可执行文件
+add_executable(test_plugin
+    test/test_plugin.cpp
+)
+
 # 添加关键词检测器可执行文件
 add_executable(keyword_detector
     extension/auto_AC/src/main.cpp
+    extension/auto_AC/src/AhoCorasick.cpp
+)
+
+# 添加main_of_0x12测试可执行文件 - 用于测试
+add_executable(test_main_of_0x12
+    test/main_of_0x12.cpp
+    extension/auto_AC/src/AhoCorasick.cpp
+)
+
+# 添加插件共享库
+add_library(imap_plugin SHARED
+    src/plugin/plugin.cpp
     extension/auto_AC/src/AhoCorasick.cpp
 )
 
@@ -161,6 +181,40 @@ target_link_libraries(keyword_detector
     ${ICONV_LIBRARY}
 )
 
+# 链接插件测试与插件库
+target_link_libraries(test_plugin
+    imap_plugin
+    ${ICONV_LIBRARY}
+    ${CMAKE_DL_LIBS}  # 添加动态链接库支持
+)
+
+# 链接test_main_of_0x12与所需库
+target_link_libraries(test_main_of_0x12
+    flow_manager
+    s2c_tools
+    ${OPENSSL_LIBRARIES}
+    ${ICONV_LIBRARY}
+)
+
+# 链接imap_plugin与所需库
+target_link_libraries(imap_plugin
+    flow_manager
+    s2c_tools
+    ${OPENSSL_LIBRARIES}
+    ${ICONV_LIBRARY}
+)
+
+# 添加AC自动机源码目录到包含目录
+target_include_directories(test_main_of_0x12 PRIVATE
+    ${CMAKE_SOURCE_DIR}/extension/auto_AC/include
+)
+
+# 为imap_plugin添加包含目录
+target_include_directories(imap_plugin PRIVATE
+    ${CMAKE_SOURCE_DIR}/extension/auto_AC/include
+    ${CMAKE_SOURCE_DIR}/include
+)
+
 # 添加测试
 enable_testing()
 add_test(NAME CircularStringTest COMMAND test_circular_string)
@@ -170,9 +224,11 @@ add_test(NAME ImapPerformanceTest COMMAND test_imap_performance)
 add_test(NAME S2CParserTest COMMAND test_s2c_parser)
 add_test(NAME C2SParserTest COMMAND test_c2s_parser)
 add_test(NAME EmailKeywordDetectionTest COMMAND test_email_keyword_detection)
+add_test(NAME MainOf0x12Test COMMAND test_main_of_0x12)
+add_test(NAME PluginTest COMMAND test_plugin)
 
 # 安装规则
-install(TARGETS circular_string flow_manager
+install(TARGETS circular_string flow_manager imap_plugin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
 )
