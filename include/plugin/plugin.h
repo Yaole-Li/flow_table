@@ -21,10 +21,7 @@
 #define DLL_PUBLIC __attribute__ ((visibility ("default")))
 #endif
 
-// 定义BOOK类型 - 用于插件内部数据存储
-typedef struct _BOOK {
-    void* data;  // 通用数据指针
-} BOOK;
+// 插件相关宏定义
 
 #include <iostream>
 #include <string>
@@ -77,9 +74,7 @@ typedef struct {
     unsigned int Volume;   // 容　　限
 } TASK;
 
-// 全局变量
-extern "C" BOOK g_Book;      // 全局BOOK
-extern "C" BOOK *WorkBook;   // 线程BOOK
+// 全局变量声明
 
 #ifdef __cplusplus
 extern "C" {

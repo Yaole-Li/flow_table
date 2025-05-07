@@ -12,8 +12,6 @@
 #include "../../include/plugin/plugin.h"
 
 // 全局变量
-BOOK g_Book;      // 全局BOOK
-BOOK *WorkBook;   // 线程BOOK
 
 // 内部全局变量
 static flow_table::HashFlowTable* flowTable = nullptr;
@@ -169,9 +167,6 @@ int Create(unsigned short Version, unsigned short Amount, const char *Option) {
     
     std::cout << "全局初始化完成" << std::endl;
     
-    // 初始化全局BOOK
-    g_Book.data = nullptr;
-    
     return 0; // 成功返回0
 }
 
@@ -200,10 +195,6 @@ int Single(unsigned short Thread, const char *Option) {
     flowTable->setFlowTimeout(flowTimeoutMs);
     
     std::cout << "线程初始化完成" << std::endl;
-    
-    // 初始化线程BOOK
-    WorkBook = new BOOK();
-    WorkBook->data = nullptr;
     
     return 0; // 成功返回0
 }
@@ -369,15 +360,6 @@ void Remove() {
     }
     
     std::cout << "清理完成" << std::endl;
-    
-    // 清理线程BOOK
-    if (WorkBook != nullptr) {
-        delete WorkBook;
-        WorkBook = nullptr;
-    }
-    
-    // 清理全局BOOK
-    g_Book.data = nullptr;
 }
 
 // 提供一个函数用于外部设置配置文件路径
