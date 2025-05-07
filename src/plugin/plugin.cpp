@@ -3,15 +3,19 @@
  * @brief IMAP流量分析和关键词检测插件接口实现
  * 
  * 实现了plugin.h中声明的四个接口函数：
- * - GlobalInit：全局初始化
- * - ThreadInit：线程初始化
- * - Filter：数据包过滤处理
- * - Remove：资源清理
+ * - Create：插件创建（全局初始化）
+ * - Single：插件构建（线程初始化）
+ * - Filter：数据过滤处理
+ * - Remove：插件拆除（资源清理）
  */
 
 #include "../../include/plugin/plugin.h"
 
 // 全局变量
+BOOK g_Book;      // 全局BOOK
+BOOK *WorkBook;   // 线程BOOK
+
+// 内部全局变量
 static flow_table::HashFlowTable* flowTable = nullptr;
 // 关键词检测相关全局变量
 static AhoCorasick* acDetector = nullptr;
@@ -113,9 +117,11 @@ void performKeywordDetection(const std::string& content) {
     acDetector->queryWord(content);
 }
 
-// ------------------------------ 1. 全局初始化 ------------------------------
+// ------------------------------ 1. 插件创建（全局初始化） ------------------------------
 // 该部分只在程序启动时执行一次
-void GlobalInit() {
+int Create(unsigned short Version, unsigned short Amount, const char *Option) {
+    // 使用参数以避免警告
+    std::cout << "插件创建: 版本" << Version << ", 参数数量" << Amount << ", 选项" << (Option ? Option : "无") << std::endl;
     std::cout << "执行全局初始化..." << std::endl;
     
     // 获取项目根目录
@@ -162,11 +168,18 @@ void GlobalInit() {
     }
     
     std::cout << "全局初始化完成" << std::endl;
+    
+    // 初始化全局BOOK
+    g_Book.data = nullptr;
+    
+    return 0; // 成功返回0
 }
 
-// ------------------------------ 2. 单线程初始化 ------------------------------
+// ------------------------------ 2. 插件构建（线程初始化） ------------------------------
 // 该部分在每个工作线程启动时执行
-void ThreadInit() {
+int Single(unsigned short Thread, const char *Option) {
+    // 使用参数以避免警告
+    std::cout << "线程初始化: 线程编号" << Thread << ", 选项" << (Option ? Option : "无") << std::endl;
     std::cout << "执行线程初始化..." << std::endl;
     
     // 创建哈希流表（每个线程一个实例）
@@ -187,6 +200,12 @@ void ThreadInit() {
     flowTable->setFlowTimeout(flowTimeoutMs);
     
     std::cout << "线程初始化完成" << std::endl;
+    
+    // 初始化线程BOOK
+    WorkBook = new BOOK();
+    WorkBook->data = nullptr;
+    
+    return 0; // 成功返回0
 }
 
 // ------------------------------ 3. Filter 处理函数 ------------------------------
@@ -321,7 +340,7 @@ int Filter(TASK *Import, TASK **Export) {
     return 0;
 }
 
-// ------------------------------ 4. Remove 清理函数 ------------------------------
+// ------------------------------ 4. 插件拆除（资源清理） ------------------------------
 // 负责资源释放和清理
 void Remove() {
     std::cout << "执行清理..." << std::endl;
@@ -350,10 +369,19 @@ void Remove() {
     }
     
     std::cout << "清理完成" << std::endl;
+    
+    // 清理线程BOOK
+    if (WorkBook != nullptr) {
+        delete WorkBook;
+        WorkBook = nullptr;
+    }
+    
+    // 清理全局BOOK
+    g_Book.data = nullptr;
 }
 
 // 提供一个函数用于外部设置配置文件路径
-extern "C" void SetConfigFilePath(const char* path) {
+void SetConfigFilePath(const char* path) {
     if (path != nullptr) {
         configFilePath = path;
     }

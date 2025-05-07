@@ -14,6 +14,18 @@
 #ifndef FLOW_TABLE_PLUGIN_H
 #define FLOW_TABLE_PLUGIN_H
 
+// DLL导出宏定义
+#ifdef _WIN32
+#define DLL_PUBLIC __declspec(dllexport)
+#else
+#define DLL_PUBLIC __attribute__ ((visibility ("default")))
+#endif
+
+// 定义BOOK类型 - 用于插件内部数据存储
+typedef struct _BOOK {
+    void* data;  // 通用数据指针
+} BOOK;
+
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -65,6 +77,10 @@ typedef struct {
     unsigned int Volume;   // 容　　限
 } TASK;
 
+// 全局变量
+extern "C" BOOK g_Book;      // 全局BOOK
+extern "C" BOOK *WorkBook;   // 线程BOOK
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -72,21 +88,30 @@ extern "C" {
 // ------------------------------ 导出接口函数 ------------------------------
 
 /**
- * @brief 全局初始化函数
+ * @brief 插件创建函数 (全局初始化)
  * 
  * 该函数在程序启动时执行一次，用于初始化全局资源
+ * 
+ * @param Version 插件版本
+ * @param Amount 参数数量
+ * @param Option 选项参数
+ * @return 初始化结果，0表示成功
  */
-void GlobalInit();
+DLL_PUBLIC int Create(unsigned short Version, unsigned short Amount, const char *Option);
 
 /**
- * @brief 线程初始化函数
+ * @brief 插件构建函数 (线程初始化)
  * 
  * 该函数在每个工作线程启动时执行，用于初始化线程级别资源
+ * 
+ * @param Thread 线程编号
+ * @param Option 选项参数
+ * @return 初始化结果，0表示成功
  */
-void ThreadInit();
+DLL_PUBLIC int Single(unsigned short Thread, const char *Option);
 
 /**
- * @brief 数据包过滤函数
+ * @brief 数据过滤函数
  * 
  * 处理每个数据包，解析IMAP协议内容并进行关键词检测
  * 
@@ -94,14 +119,22 @@ void ThreadInit();
  * @param Export 输出的数据包任务
  * @return 处理结果，0表示成功
  */
-int Filter(TASK *Import, TASK **Export);
+DLL_PUBLIC int Filter(TASK *Import, TASK **Export);
 
 /**
- * @brief 资源清理函数
+ * @brief 插件拆除函数 (资源清理)
  * 
  * 负责释放所有资源
  */
-void Remove();
+DLL_PUBLIC void Remove();
+
+// 设置配置文件路径函数
+/**
+ * @brief 设置配置文件路径
+ * 
+ * @param path 配置文件路径
+ */
+DLL_PUBLIC void SetConfigFilePath(const char* path);
 
 #ifdef __cplusplus
 }

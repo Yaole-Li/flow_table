@@ -97,13 +97,15 @@ int main(int argc, char* argv[]) {
     // 调用测试接口 - 使用直接引入的函数符号
     std::cout << "\n===== 调用插件接口 =====" << std::endl;
     
-    // 1. 全局初始化
-    std::cout << "\n1. 调用 GlobalInit()" << std::endl;
-    GlobalInit();
+    // 1. 全局初始化 - 插件创建函数
+    std::cout << "\n1. 调用 Create()" << std::endl;
+    // 传递版本号1，参数数0，无选项
+    Create(1, 0, nullptr);
     
-    // 2. 线程初始化
-    std::cout << "\n2. 调用 ThreadInit()" << std::endl;
-    ThreadInit();
+    // 2. 线程初始化 - 插件构建函数
+    std::cout << "\n2. 调用 Single()" << std::endl;
+    // 传递线程编号0，无选项
+    Single(0, nullptr);
     
     // 3. 处理C2S数据包
     std::cout << "\n3. 处理C2S数据包" << std::endl;
